@@ -9,17 +9,24 @@
  *
  * Bridge protocol (JSON strings):
  *   page → RN:  {type:'ready'} | {type:'change', value} | {type:'save'} | {type:'error', message}
+ *               | {type:'selection', text, line, col}
  *   RN → page:  {type:'setValue'|'setLanguage'|'setTheme'|'setFontSize'|'setVim'|'focus', ...}
+ *               | {type:'setOptions', options: EditorOptions}  (feature switches)
  */
+
+import { DEFAULT_EDITOR_OPTIONS, type EditorOptions } from '@/src/lib/editor/editorOptions';
 
 export interface EditorHtmlOptions {
   dark: boolean;
   fontSize: number;
+  options?: EditorOptions;
 }
 
 const ESM = 'https://esm.sh';
 
-export function buildEditorHtml({ dark, fontSize }: EditorHtmlOptions): string {
+export function buildEditorHtml({ dark, fontSize, options }: EditorHtmlOptions): string {
+  const initial = { ...DEFAULT_EDITOR_OPTIONS, ...(options ?? {}) };
+  const initialJson = JSON.stringify(initial);
   return `<!DOCTYPE html>
 <html>
 <head>
@@ -46,22 +53,30 @@ let currentLang = 'text';
 let currentTheme = ${dark ? 'true' : 'false'};
 let currentFontSize = ${fontSize};
 let vimEnabled = false;
+let opts = ${initialJson};
 
 async function main() {
-  const { EditorView, keymap, lineNumbers, highlightActiveLine, highlightActiveLineGutter, drawSelection } =
+  const { EditorView, keymap, lineNumbers, highlightActiveLine, highlightActiveLineGutter, drawSelection, highlightWhitespace, highlightTrailingWhitespace } =
     await import('${ESM}/@codemirror/view@6.36.2');
   const { EditorState, Compartment, Prec } = await import('${ESM}/@codemirror/state@6.5.2');
   const { defaultKeymap, history, historyKeymap, indentWithTab } = await import('${ESM}/@codemirror/commands@6.8.0');
-  const { syntaxHighlighting, defaultHighlightStyle, bracketMatching, foldGutter, indentOnInput } =
+  const { syntaxHighlighting, defaultHighlightStyle, bracketMatching, foldGutter, indentOnInput, indentUnit } =
     await import('${ESM}/@codemirror/language@6.11.0');
   const { autocompletion, closeBrackets, closeBracketsKeymap, completionKeymap } =
     await import('${ESM}/@codemirror/autocomplete@6.18.4');
-  const { searchKeymap, highlightSelectionMatches } = await import('${ESM}/@codemirror/search@6.5.8');
+  const { search, searchKeymap, highlightSelectionMatches } = await import('${ESM}/@codemirror/search@6.5.8');
   const { oneDark } = await import('${ESM}/@codemirror/theme-one-dark@6.1.3');
 
   const langCompartment = new Compartment();
   const themeCompartment = new Compartment();
   const vimCompartment = new Compartment();
+  const gutterCompartment = new Compartment();   // line numbers + active-line gutter
+  const wrapCompartment = new Compartment();     // word wrap
+  const tabCompartment = new Compartment();      // tab size + indent unit
+  const activeCompartment = new Compartment();   // active line + selection matches
+  const bracketCompartment = new Compartment();  // bracket matching + auto-close
+  const completionCompartment = new Compartment(); // autocomplete
+  const whitespaceCompartment = new Compartment(); // visible whitespace
 
   const langLoaders = {
     javascript: () => import('${ESM}/@codemirror/lang-javascript@6.2.3').then((m) => m.javascript({ jsx: true })),
@@ -90,7 +105,14 @@ async function main() {
       selTimer = setTimeout(() => {
         const sel = view.state.selection.main;
         const text = sel.empty ? '' : view.state.sliceDoc(sel.from, sel.to);
-        post({ type: 'selection', text: text.slice(0, 4000) });
+        // VS Code-style status bar payload: 1-based line / column of the cursor.
+        const lineInfo = view.state.doc.lineAt(sel.head);
+        post({
+          type: 'selection',
+          text: text.slice(0, 4000),
+          line: lineInfo.number,
+          col: sel.head - lineInfo.from + 1,
+        });
       }, 220);
     }
   });
@@ -109,26 +131,35 @@ async function main() {
     return mod.vim();
   }
 
+  /** Feature-switch extension builders — one per compartment. */
+  const gutterExts = (o) => (o.lineNumbers ? [lineNumbers(), highlightActiveLineGutter()] : []);
+  const wrapExts = (o) => (o.wordWrap ? [EditorView.lineWrapping] : []);
+  const tabExts = (o) => [EditorState.tabSize.of(o.tabSize), indentUnit.of(' '.repeat(o.tabSize))];
+  const activeExts = (o) => (o.activeLine ? [highlightActiveLine(), highlightSelectionMatches()] : []);
+  const bracketExts = (o) =>
+    o.brackets
+      ? [bracketMatching(), closeBrackets(), keymap.of(closeBracketsKeymap)]
+      : [];
+  const completionExts = (o) =>
+    o.autocomplete
+      ? [autocompletion(), keymap.of(completionKeymap)]
+      : [];
+  const whitespaceExts = (o) =>
+    o.whitespace ? [highlightWhitespace(), highlightTrailingWhitespace()] : [];
+
   const state = EditorState.create({
     doc: '',
     extensions: [
-      lineNumbers(),
-      highlightActiveLineGutter(),
       history(),
       foldGutter(),
       drawSelection(),
       indentOnInput(),
-      bracketMatching(),
-      closeBrackets(),
-      autocompletion(),
-      highlightActiveLine(),
-      highlightSelectionMatches(),
+      // VS Code-style find panel (Ctrl/Cmd+F) pinned to the top.
+      search({ top: true }),
       keymap.of([
-        ...closeBracketsKeymap,
         ...defaultKeymap,
         ...historyKeymap,
         ...searchKeymap,
-        ...completionKeymap,
         indentWithTab,
       ]),
       Prec.highest(keymap.of([{
@@ -138,6 +169,13 @@ async function main() {
       langCompartment.of([]),
       themeCompartment.of(themeFor(currentTheme, currentFontSize)),
       vimCompartment.of([]),
+      gutterCompartment.of(gutterExts(opts)),
+      wrapCompartment.of(wrapExts(opts)),
+      tabCompartment.of(tabExts(opts)),
+      activeCompartment.of(activeExts(opts)),
+      bracketCompartment.of(bracketExts(opts)),
+      completionCompartment.of(completionExts(opts)),
+      whitespaceCompartment.of(whitespaceExts(opts)),
       onDocChange,
     ],
   });
@@ -178,6 +216,20 @@ async function main() {
     suppressChange = false;
   }
 
+  function setOptions(next) {
+    opts = Object.assign({}, opts, next || {});
+    const effects = [
+      gutterCompartment.reconfigure(gutterExts(opts)),
+      wrapCompartment.reconfigure(wrapExts(opts)),
+      tabCompartment.reconfigure(tabExts(opts)),
+      activeCompartment.reconfigure(activeExts(opts)),
+      bracketCompartment.reconfigure(bracketExts(opts)),
+      completionCompartment.reconfigure(completionExts(opts)),
+      whitespaceCompartment.reconfigure(whitespaceExts(opts)),
+    ];
+    view.dispatch({ effects });
+  }
+
   function route(raw) {
     let msg;
     try { msg = JSON.parse(raw); } catch { return; }
@@ -186,6 +238,7 @@ async function main() {
     else if (msg.type === 'setTheme') setTheme(!!msg.dark);
     else if (msg.type === 'setFontSize') setFontSize(msg.px || 14);
     else if (msg.type === 'setVim') void setVim(!!msg.enabled);
+    else if (msg.type === 'setOptions') setOptions(msg.options);
     else if (msg.type === 'revealLine') {
       const doc = view.state.doc;
       const line = doc.line(Math.max(1, Math.min(msg.line || 1, doc.lines)));

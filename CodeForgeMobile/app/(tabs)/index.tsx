@@ -19,7 +19,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import CodeEditor from '@/src/components/editor/CodeEditor';
 import { EditorTabs, type EditorTabItem } from '@/src/components/editor/EditorTabs';
 import { FileTree } from '@/src/components/editor/FileTree';
-import { usePalette } from '@/src/constants/theme';
+import { usePalette, type Palette } from '@/src/constants/theme';
+import { DEFAULT_EDITOR_OPTIONS } from '@/src/lib/editor/editorOptions';
 import { LANGUAGE_LABELS } from '@/src/lib/editor/languages';
 import { useAgentStore } from '@/src/store/agentStore';
 import { isDirty, useProjectStore } from '@/src/store/projectStore';
@@ -57,8 +58,30 @@ export default function EditorScreen() {
   const fontSize = useSettingsStore((s) => s.editorFontSize);
   const vimEnabled = useSettingsStore((s) => s.vimEnabled);
   const autoSave = useSettingsStore((s) => s.autoSave);
+  const tabSize = useSettingsStore((s) => s.tabSize);
+  const wordWrap = useSettingsStore((s) => s.wordWrap);
+  const lineNumbers = useSettingsStore((s) => s.lineNumbersEnabled);
+  const autocomplete = useSettingsStore((s) => s.autocompleteEnabled);
+  const activeLine = useSettingsStore((s) => s.activeLineEnabled);
+  const brackets = useSettingsStore((s) => s.bracketsEnabled);
+  const whitespace = useSettingsStore((s) => s.whitespaceVisible);
+
+  const editorOptions = useMemo(
+    () => ({
+      ...DEFAULT_EDITOR_OPTIONS,
+      tabSize,
+      wordWrap,
+      lineNumbers,
+      autocomplete,
+      activeLine,
+      brackets,
+      whitespace,
+    }),
+    [tabSize, wordWrap, lineNumbers, autocomplete, activeLine, brackets, whitespace],
+  );
 
   const [treeOpen, setTreeOpen] = useState(true);
+  const [cursor, setCursor] = useState<{ line: number; col: number }>({ line: 1, col: 1 });
 
   useEffect(() => {
     void restoreLastProject();
@@ -165,10 +188,8 @@ export default function EditorScreen() {
           </Text>
           {activeFile && (
             <Text style={[styles.headerSubtitle, { color: palette.textSecondary }]}>
-              {LANGUAGE_LABELS[activeFile.language]}
-              {activeDirty ? '  •  unsaved' : ''}
-              {autoSave ? '  •  auto-save' : ''}
-              {vimEnabled ? '  •  vim' : ''}
+              {activeDirty ? 'unsaved changes' : 'saved'}
+              {autoSave ? '  •  auto-save on' : ''}
             </Text>
           )}
         </View>
@@ -304,10 +325,25 @@ export default function EditorScreen() {
               dark={palette.dark}
               fontSize={fontSize}
               vim={vimEnabled}
+              options={editorOptions}
               revealLine={revealLine}
               onChange={(content) => updateContent(activeFile.uri, content)}
               onSaveShortcut={() => void saveFile()}
               onSelectionChange={(text) => setSelection(text.length > 0 ? text : null)}
+              onCursorChange={(line, col) => setCursor({ line, col })}
+            />
+          )}
+
+          {/* VS Code-style status bar */}
+          {activeFile && (
+            <EditorStatusBar
+              palette={palette}
+              cursor={cursor}
+              languageLabel={LANGUAGE_LABELS[activeFile.language]}
+              tabSize={tabSize}
+              wordWrap={wordWrap}
+              vimEnabled={vimEnabled}
+              autoSave={autoSave}
             />
           )}
         </View>
@@ -338,6 +374,49 @@ export default function EditorScreen() {
 
 function EmptyState({ children, palette }: { children: React.ReactNode; palette: ReturnType<typeof usePalette> }) {
   return <View style={[styles.empty, { backgroundColor: palette.bg }]}>{children}</View>;
+}
+
+/** Bottom strip à la VS Code: cursor position, indent, wrap, language. */
+function EditorStatusBar({
+  palette,
+  cursor,
+  languageLabel,
+  tabSize,
+  wordWrap,
+  vimEnabled,
+  autoSave,
+}: {
+  palette: Palette;
+  cursor: { line: number; col: number };
+  languageLabel: string;
+  tabSize: number;
+  wordWrap: boolean;
+  vimEnabled: boolean;
+  autoSave: boolean;
+}) {
+  return (
+    <View
+      style={[
+        styles.statusBar,
+        { backgroundColor: palette.bgSecondary, borderTopColor: palette.border },
+      ]}
+      accessibilityLabel="Editor status bar"
+    >
+      <Text style={[styles.statusItem, { color: palette.textSecondary }]}>
+        Ln {cursor.line}, Col {cursor.col}
+      </Text>
+      <Text style={[styles.statusItem, { color: palette.textSecondary }]}>Spaces: {tabSize}</Text>
+      {wordWrap ? (
+        <Text style={[styles.statusItem, { color: palette.textSecondary }]}>Wrap</Text>
+      ) : null}
+      {vimEnabled ? (
+        <Text style={[styles.statusItem, { color: palette.tint }]}>VIM</Text>
+      ) : null}
+      <View style={styles.statusSpacer} />
+      {autoSave ? <Ionicons name="cloud-done-outline" size={12} color={palette.success} /> : null}
+      <Text style={[styles.statusItem, { color: palette.textSecondary }]}>{languageLabel}</Text>
+    </View>
+  );
 }
 
 const styles = StyleSheet.create({
@@ -379,6 +458,16 @@ const styles = StyleSheet.create({
   },
   treeTitle: { fontSize: 13, fontWeight: '600', flexShrink: 1 },
   editorArea: { flex: 1, minWidth: 0 },
+  statusBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderTopWidth: StyleSheet.hairlineWidth,
+  },
+  statusItem: { fontSize: 11, fontWeight: '500' },
+  statusSpacer: { flex: 1 },
   backdrop: {
     position: 'absolute',
     top: 0,

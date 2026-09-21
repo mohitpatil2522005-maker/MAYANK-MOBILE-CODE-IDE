@@ -22,7 +22,7 @@ npx expo run:android      # native Android
 npx expo run:ios          # native iOS (macOS)
 npm run web               # browser preview
 npm run typecheck         # tsc --noEmit (strict)
-npm test                  # 4 logic suites · 105 checks (SSE, tools, providers, export)
+npm test                  # 5 logic suites · 134 checks (SSE, tools, providers, export, settings)
 ```
 
 CI runs the same typecheck + test commands on every push/PR:
@@ -41,6 +41,18 @@ CI runs the same typecheck + test commands on every push/PR:
 
 ### Hardening ✚
 
+- **VS Code-style settings** — schema-driven (`src/lib/settings/schema.ts`),
+  searchable settings screen with dot-namespaced ids (`editor.fontSize`,
+  `files.autoSave`…), modified-state accent bars, dropdown/stepper/switch
+  controls, and "N Settings Found" result counts.
+- **Editor extensions & switches** (CodeMirror 6, both native WebView and web
+  builds): tab size (2/4/8 indent unit), word wrap, line-number gutter,
+  autocomplete, active-line + selection-match highlight, bracket matching &
+  auto-close, visible whitespace/trailing whitespace, and a top-pinned
+  find/replace panel (Ctrl/Cmd+F).
+- **Status bar (VS Code-style)** — `Ln X, Col Y`, `Spaces: n`, Wrap, VIM and
+  the file language shown at the bottom of the editor; cursor position is
+  streamed from CodeMirror on both native and web builds.
 - **Session persistence** — the Forge chat survives app restarts (last 80
   messages in AsyncStorage); in-flight tool requests degrade to a "session
   restored" failure instead of a phantom running state, and truncated streams
@@ -52,7 +64,8 @@ CI runs the same typecheck + test commands on every push/PR:
   with a language label + one-tap Copy button (and selectable text).
 - **In-repo test suites** — `tests/*.test.ts` covers SSE parsing for all
   provider families, auth/error key-leak sanitization, tool extraction + apply
-  logic, and session export; run with `npm test`.
+  logic, settings schema/search/coercion, and session export; run with
+  `npm test`.
 
 ### Native builds (Phase 6)
 

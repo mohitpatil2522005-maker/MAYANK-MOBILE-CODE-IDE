@@ -1,7 +1,25 @@
 /**
  * Tiny assertion harness for the pure-logic test suites.
  * Each suite: const t = harness('suite-name'); t.check(...); t.done();
+ *
+ * Importing this module also stubs window.localStorage so zustand/persist
+ * writes (AsyncStorage's web build reads window at *call* time) work under
+ * plain Node/tsx instead of throwing unhandled rejections.
  */
+const memoryStorage = new Map<string, string>();
+const g = globalThis as Record<string, unknown>;
+if (typeof g.window === 'undefined') g.window = {};
+(g.window as Record<string, unknown>).localStorage = {
+  getItem: (key: string) => (memoryStorage.has(key) ? memoryStorage.get(key)! : null),
+  setItem: (key: string, value: string) => void memoryStorage.set(key, String(value)),
+  removeItem: (key: string) => void memoryStorage.delete(key),
+  clear: () => memoryStorage.clear(),
+  get length() {
+    return memoryStorage.size;
+  },
+  key: (index: number) => [...memoryStorage.keys()][index] ?? null,
+};
+
 export interface Harness {
   check(name: string, actual: unknown, expected: unknown): void;
   section(title: string): void;

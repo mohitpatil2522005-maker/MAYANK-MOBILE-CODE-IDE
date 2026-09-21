@@ -3,13 +3,20 @@
  * Uses @uiw/react-codemirror directly; language parsers and the vim extension
  * are lazy-loaded so the initial bundle stays light.
  */
-import { Prec, type Extension } from '@codemirror/state';
+import { indentUnit } from '@codemirror/language';
+import { Prec, EditorState, type Extension } from '@codemirror/state';
 import { oneDark } from '@codemirror/theme-one-dark';
-import { EditorView, keymap } from '@codemirror/view';
+import {
+  EditorView,
+  highlightTrailingWhitespace,
+  highlightWhitespace,
+  keymap,
+} from '@codemirror/view';
 import CodeMirror from '@uiw/react-codemirror';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
+import { DEFAULT_EDITOR_OPTIONS, type EditorOptions } from '@/src/lib/editor/editorOptions';
 import type { LanguageId } from '@/src/lib/editor/languages';
 
 export interface CodeEditorProps {
@@ -18,11 +25,15 @@ export interface CodeEditorProps {
   dark: boolean;
   fontSize: number;
   vim: boolean;
+  /** Feature switches from the settings schema (tab size, wrap, gutters…). */
+  options?: EditorOptions;
   editable?: boolean;
   onChange: (value: string) => void;
   onSaveShortcut?: () => void;
   /** Fired with the current selection text, '' when empty. */
   onSelectionChange?: (text: string) => void;
+  /** Fired with the 1-based cursor position for the status bar. */
+  onCursorChange?: (line: number, col: number) => void;
   /** 1-based line to scroll to + select (e.g. after an agent edit applies). */
   revealLine?: number | null;
 }
@@ -103,16 +114,24 @@ export default function CodeEditor({
   dark,
   fontSize,
   vim,
+  options,
   editable = true,
   onChange,
   onSaveShortcut,
   onSelectionChange,
+  onCursorChange,
   revealLine = null,
 }: CodeEditorProps) {
+  const opts = useMemo<EditorOptions>(
+    () => ({ ...DEFAULT_EDITOR_OPTIONS, ...(options ?? {}) }),
+    [options],
+  );
   const langExt = useLazyExtension(true, () => loadLanguage(language), [language]);
   const vimExt = useLazyExtension(vim, loadVim, []);
   const saveRef = useRef(onSaveShortcut);
   saveRef.current = onSaveShortcut;
+  const cursorRef = useRef(onCursorChange);
+  cursorRef.current = onCursorChange;
   const selectionRef = useRef(onSelectionChange);
   selectionRef.current = onSelectionChange;
   const lastSelection = useRef('');
@@ -137,7 +156,11 @@ export default function CodeEditor({
     // vim must stay ahead of other keymaps to win key events.
     if (vimExt) list.push(Prec.highest(vimExt));
     if (langExt) list.push(langExt);
+    if (opts.wordWrap) list.push(EditorView.lineWrapping);
+    if (opts.whitespace) list.push(highlightWhitespace(), highlightTrailingWhitespace());
     list.push(
+      EditorState.tabSize.of(opts.tabSize),
+      indentUnit.of(' '.repeat(opts.tabSize)),
       Prec.highest(
         keymap.of([
           {
@@ -155,7 +178,7 @@ export default function CodeEditor({
       }),
     );
     return list;
-  }, [langExt, vimExt, fontSize]);
+  }, [langExt, vimExt, fontSize, opts]);
 
   return (
     <View style={styles.container}>
@@ -170,6 +193,8 @@ export default function CodeEditor({
             lastSelection.current = text;
             selectionRef.current?.(text);
           }
+          const lineInfo = viewUpdate.state.doc.lineAt(sel.head);
+          cursorRef.current?.(lineInfo.number, sel.head - lineInfo.from + 1);
         }}
         theme={dark ? oneDark : 'light'}
         extensions={extensions}
@@ -180,16 +205,16 @@ export default function CodeEditor({
         height="100%"
         style={styles.codemirror}
         basicSetup={{
-          lineNumbers: true,
+          lineNumbers: opts.lineNumbers,
+          highlightActiveLineGutter: opts.lineNumbers,
           foldGutter: true,
-          autocompletion: true,
-          highlightActiveLine: true,
-          highlightActiveLineGutter: true,
-          bracketMatching: true,
-          closeBrackets: true,
+          autocompletion: opts.autocomplete,
+          highlightActiveLine: opts.activeLine,
+          highlightSelectionMatches: opts.activeLine,
+          bracketMatching: opts.brackets,
+          closeBrackets: opts.brackets,
           indentOnInput: true,
           searchKeymap: true,
-          tabSize: 2,
         }}
       />
     </View>

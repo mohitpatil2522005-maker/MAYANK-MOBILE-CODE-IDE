@@ -11,6 +11,7 @@ import WebViewBase, {
 } from 'react-native-webview';
 
 import type { LanguageId } from '@/src/lib/editor/languages';
+import { DEFAULT_EDITOR_OPTIONS, type EditorOptions } from '@/src/lib/editor/editorOptions';
 import { buildEditorHtml } from './codemirrorHtml';
 
 /** Instance methods used from the WebView ref (typed loosely in the lib). */
@@ -31,11 +32,15 @@ export interface CodeEditorProps {
   dark: boolean;
   fontSize: number;
   vim: boolean;
+  /** Feature switches from the settings schema (tab size, wrap, gutters…). */
+  options?: EditorOptions;
   editable?: boolean;
   onChange: (value: string) => void;
   onSaveShortcut?: () => void;
   /** Fired (debounced) with the current selection text, '' when empty. */
   onSelectionChange?: (text: string) => void;
+  /** Fired with the 1-based cursor position for the status bar. */
+  onCursorChange?: (line: number, col: number) => void;
   /** 1-based line to scroll to + select (e.g. after an agent edit applies). */
   revealLine?: number | null;
 }
@@ -46,6 +51,7 @@ type OutboundMessage =
   | { type: 'setTheme'; dark: boolean }
   | { type: 'setFontSize'; px: number }
   | { type: 'setVim'; enabled: boolean }
+  | { type: 'setOptions'; options: EditorOptions }
   | { type: 'revealLine'; line: number }
   | { type: 'focus' };
 
@@ -53,6 +59,8 @@ interface InboundMessage {
   type: 'ready' | 'change' | 'save' | 'error' | 'selection';
   value?: string;
   text?: string;
+  line?: number;
+  col?: number;
   message?: string;
 }
 
@@ -62,9 +70,11 @@ export default function CodeEditor({
   dark,
   fontSize,
   vim,
+  options,
   onChange,
   onSaveShortcut,
   onSelectionChange,
+  onCursorChange,
   revealLine = null,
 }: CodeEditorProps) {
   const webRef = useRef<WebViewHandle>(null);
@@ -72,14 +82,18 @@ export default function CodeEditor({
   const queue = useRef<string[]>([]);
   /** Last content that came from the user typing inside the WebView. */
   const lastKeystrokeValue = useRef(value);
-  const latest = useRef({ language, dark, fontSize, vim });
-  latest.current = { language, dark, fontSize, vim };
-  const callbacks = useRef({ onChange, onSaveShortcut, onSelectionChange });
-  callbacks.current = { onChange, onSaveShortcut, onSelectionChange };
+  const editorOptions = useMemo<EditorOptions>(
+    () => ({ ...DEFAULT_EDITOR_OPTIONS, ...(options ?? {}) }),
+    [options],
+  );
+  const latest = useRef({ language, dark, fontSize, vim, options: editorOptions });
+  latest.current = { language, dark, fontSize, vim, options: editorOptions };
+  const callbacks = useRef({ onChange, onSaveShortcut, onSelectionChange, onCursorChange });
+  callbacks.current = { onChange, onSaveShortcut, onSelectionChange, onCursorChange };
 
   // HTML depends only on initial appearance; updates go through messages.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  const html = useMemo(() => buildEditorHtml({ dark, fontSize }), []);
+  const html = useMemo(() => buildEditorHtml({ dark, fontSize, options: editorOptions }), []);
 
   const post = (msg: OutboundMessage) => {
     const serialized = JSON.stringify(msg);
@@ -98,6 +112,7 @@ export default function CodeEditor({
   useEffect(() => post({ type: 'setTheme', dark }), [dark]);
   useEffect(() => post({ type: 'setFontSize', px: fontSize }), [fontSize]);
   useEffect(() => post({ type: 'setVim', enabled: vim }), [vim]);
+  useEffect(() => post({ type: 'setOptions', options: editorOptions }), [editorOptions]);
   useEffect(() => {
     if (revealLine) post({ type: 'revealLine', line: revealLine });
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -112,11 +127,12 @@ export default function CodeEditor({
     }
     if (msg.type === 'ready') {
       ready.current = true;
-      const { language: l, dark: d, fontSize: fs, vim: v } = latest.current;
+      const { language: l, dark: d, fontSize: fs, vim: v, options: o } = latest.current;
       post({ type: 'setTheme', dark: d });
       post({ type: 'setFontSize', px: fs });
       post({ type: 'setLanguage', lang: l });
       post({ type: 'setVim', enabled: v });
+      post({ type: 'setOptions', options: o });
       post({ type: 'setValue', value: lastKeystrokeValue.current });
       queue.current.forEach((raw) => webRef.current?.postMessage(raw));
       queue.current = [];
@@ -127,6 +143,9 @@ export default function CodeEditor({
       callbacks.current.onSaveShortcut?.();
     } else if (msg.type === 'selection') {
       callbacks.current.onSelectionChange?.(msg.text ?? '');
+      if (typeof msg.line === 'number' && typeof msg.col === 'number') {
+        callbacks.current.onCursorChange?.(msg.line, msg.col);
+      }
     } else if (msg.type === 'error') {
       // Editor-page errors surface in dev mode only; never crash the app.
       if (__DEV__) console.warn('[CodeEditor WebView]', msg.message);
