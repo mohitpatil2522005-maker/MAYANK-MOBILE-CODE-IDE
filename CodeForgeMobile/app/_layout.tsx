@@ -14,10 +14,11 @@ export {
 export default function RootLayout() {
   const palette = usePalette();
 
-  // One-time hydration: provider configs (AsyncStorage) + agent model pref.
+  // One-time hydration: provider configs, session, and model preference.
   useEffect(() => {
     void useProviderRegistry.getState().hydrate();
     void useAgentStore.getState().loadModelPref();
+    void useAgentStore.getState().hydrateSession();
   }, []);
 
   return (

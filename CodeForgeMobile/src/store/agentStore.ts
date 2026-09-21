@@ -41,6 +41,8 @@ import { useProjectStore } from '@/src/store/projectStore';
 
 const MAX_ITERATIONS = 6;
 const MODEL_PREF_KEY = 'codeforge/agentModel/v1';
+const SESSION_KEY = 'codeforge/agentSession/v1';
+const SESSION_MAX_MESSAGES = 80;
 
 export type ToolCallStatus =
   | 'running'
@@ -88,12 +90,15 @@ interface AgentSessionState {
   activeProviderId: string | null;
   activeModel: string | null;
   modelPrefLoaded: boolean;
+  sessionLoaded: boolean;
   /** Prompt text staged by "Send to Agent" in the editor; Composer consumes it. */
   draft: string | null;
   /** Set when the agent applies an edit; the editor reveals the changed line. */
   lastAppliedEdit: { path: string; firstNewLine: number } | null;
 
   loadModelPref: () => Promise<void>;
+  /** Restore the previous chat session from AsyncStorage (multi-turn PRD §3.2). */
+  hydrateSession: () => Promise<void>;
   selectModel: (providerId: string, model: string) => void;
   newChat: () => void;
   sendMessage: (text: string) => Promise<void>;
@@ -109,10 +114,39 @@ interface AgentSessionState {
 let runCounter = 0;
 let cancelledRunId = -1;
 let messageCounter = 0;
+/** Per-launch nonce so restored session ids never collide with new ones. */
+const sessionNonce = Math.random().toString(36).slice(2, 8);
+let sessionHydrated = false;
 
 function nextMessageId(role: string): string {
   messageCounter += 1;
-  return `${role}-${Date.now().toString(36)}-${messageCounter}`;
+  return `${role}-${sessionNonce}-${Date.now().toString(36)}-${messageCounter}`;
+}
+
+/** Strip heavy/transient fields before writing the session to storage. */
+function serializeSession(messages: AgentMessage[]): AgentMessage[] {
+  return messages.slice(-SESSION_MAX_MESSAGES).map((m) => ({
+    ...m,
+    status: m.status === 'streaming' ? 'cancelled' : m.status,
+    toolCalls: m.toolCalls?.map((c) => {
+      const { feedbackFull, ...rest } = c;
+      return rest;
+    }),
+  }));
+}
+
+/** On restore, in-flight states degrade gracefully (nothing half-applied). */
+function sanitizeRestored(messages: AgentMessage[]): AgentMessage[] {
+  if (!Array.isArray(messages)) return [];
+  return messages.map((m) => ({
+    ...m,
+    status: m.status === 'streaming' ? 'cancelled' : m.status,
+    toolCalls: m.toolCalls?.map((c) =>
+      c.status === 'running' || c.status === 'pending-approval'
+        ? { ...c, status: 'failed' as const, error: 'Session restored — ask Forge to propose this change again.' }
+        : c,
+    ),
+  }));
 }
 
 function targetProvider(state: AgentSessionState): {
@@ -390,8 +424,27 @@ export const useAgentStore = create<AgentSessionState>()((set, get) => {
     activeProviderId: null,
     activeModel: null,
     modelPrefLoaded: false,
+    sessionLoaded: false,
     draft: null,
     lastAppliedEdit: null,
+
+    async hydrateSession() {
+      if (get().sessionLoaded) return;
+      set({ sessionLoaded: true });
+      sessionHydrated = true;
+      try {
+        const raw = await AsyncStorage.getItem(SESSION_KEY);
+        if (raw) {
+          const parsed = JSON.parse(raw) as AgentMessage[];
+          const restored = sanitizeRestored(parsed);
+          if (restored.length > 0) {
+            set({ messages: restored, phase: 'idle', turnCount: 0 });
+          }
+        }
+      } catch {
+        // corrupt payload → start fresh
+      }
+    },
 
     async loadModelPref() {
       if (get().modelPrefLoaded) return;
@@ -495,6 +548,18 @@ export const useAgentStore = create<AgentSessionState>()((set, get) => {
       set({ lastAppliedEdit: null });
     },
   };
+});
+
+/** Debounced session persistence (after hydration, skips transient fields). */
+let sessionPersistTimer: ReturnType<typeof setTimeout> | null = null;
+useAgentStore.subscribe((state) => {
+  if (!sessionHydrated) return;
+  if (sessionPersistTimer) clearTimeout(sessionPersistTimer);
+  sessionPersistTimer = setTimeout(() => {
+    void AsyncStorage.setItem(SESSION_KEY, JSON.stringify(serializeSession(state.messages))).catch(
+      () => undefined,
+    );
+  }, 600);
 });
 
 /** Selector: everything the chat header should display. */

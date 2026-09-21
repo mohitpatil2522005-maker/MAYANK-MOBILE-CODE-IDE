@@ -25,6 +25,7 @@
     "@replit/codemirror-vim": "^6.4.0",
     "@uiw/react-codemirror": "^4.25.11",
     "expo": "~57.0.24",
+    "expo-clipboard": "^57.0.2",
     "expo-constants": "~57.0.19",
     "expo-document-picker": "^57.0.2",
     "expo-file-system": "^57.0.7",
@@ -50,13 +51,16 @@
   },
   "devDependencies": {
     "@types/react": "~19.2.2",
+    "tsx": "^4.23.15",
     "typescript": "~6.0.3"
   },
   "scripts": {
     "start": "expo start",
     "android": "expo start --android",
     "ios": "expo start --ios",
-    "web": "expo start --web"
+    "web": "expo start --web",
+    "typecheck": "tsc --noEmit",
+    "test": "for f in tests/*.test.ts; do tsx \"$f\" || exit 1; done"
   },
   "private": true
 }

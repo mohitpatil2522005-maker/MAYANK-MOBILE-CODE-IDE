@@ -3,7 +3,8 @@
  * system notes (centered pill) — plus tool call cards for assistant turns.
  */
 import { Ionicons } from '@expo/vector-icons';
-import React, { useMemo } from 'react';
+import * as Clipboard from 'expo-clipboard';
+import React, { useMemo, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import Markdown from 'react-native-markdown-display';
 
@@ -113,6 +114,23 @@ export function ChatMessageItem({
     hr: { backgroundColor: palette.border },
   };
 
+  const markdownRules = {
+    fence: (node: { content?: string; sourceInfo?: string }) => (
+      <CodeFence
+        key={`${node.sourceInfo ?? 'code'}-${(node.content ?? '').length}-${(node.content ?? '').slice(0, 16)}`}
+        node={node}
+        palette={palette}
+      />
+    ),
+    code_block: (node: { content?: string }) => (
+      <CodeFence
+        key={`block-${(node.content ?? '').length}-${(node.content ?? '').slice(0, 16)}`}
+        node={node}
+        palette={palette}
+      />
+    ),
+  };
+
   return (
     <View style={styles.assistantRow}>
       <View
@@ -126,7 +144,9 @@ export function ChatMessageItem({
           <ThinkingIndicator palette={palette} />
         ) : (
           <>
-            <Markdown style={mdStyles}>{displayText + (streaming ? ' ▌' : '')}</Markdown>
+            <Markdown style={mdStyles} rules={markdownRules}>
+              {displayText + (streaming ? ' ▌' : '')}
+            </Markdown>
             {message.status === 'cancelled' && (
               <Text style={[styles.stateHint, { color: palette.textSecondary }]}>— cancelled</Text>
             )}
@@ -200,6 +220,52 @@ function ThinkingIndicator({ palette }: { palette: Palette }) {
   );
 }
 
+/** Code fence with a copy button (chat ergonomics on mobile). */
+function CodeFence({
+  node,
+  palette,
+}: {
+  node: { content?: string; sourceInfo?: string };
+  palette: Palette;
+}) {
+  const [copied, setCopied] = useState(false);
+  const code = (node.content ?? '').replace(/\n$/, '');
+  const language = node.sourceInfo?.trim() || 'code';
+
+  const copy = async () => {
+    await Clipboard.setStringAsync(code).catch(() => undefined);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
+  };
+
+  return (
+    <View style={[styles.fence, { backgroundColor: palette.bgSecondary, borderColor: palette.border }]}>
+      <View style={[styles.fenceHeader, { borderColor: palette.border }]}>
+        <Text style={[styles.fenceLang, { color: palette.textSecondary }]}>{language}</Text>
+        <Pressable
+          onPress={() => void copy()}
+          hitSlop={8}
+          style={styles.copyButton}
+          accessibilityRole="button"
+          accessibilityLabel="Copy code"
+        >
+          <Ionicons
+            name={copied ? 'checkmark' : 'copy-outline'}
+            size={14}
+            color={copied ? palette.success : palette.textSecondary}
+          />
+          <Text style={[styles.copyText, { color: copied ? palette.success : palette.textSecondary }]}>
+            {copied ? 'Copied' : 'Copy'}
+          </Text>
+        </Pressable>
+      </View>
+      <Text selectable style={[styles.fenceCode, { color: palette.text }]}>
+        {code}
+      </Text>
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
   note: {
     alignSelf: 'center',
@@ -263,6 +329,25 @@ const styles = StyleSheet.create({
     maxWidth: 240,
   },
   fileRefText: { fontSize: 11.5, fontWeight: '600', flexShrink: 1 },
+  fence: { borderWidth: 1, borderRadius: 10, marginVertical: 6, overflow: 'hidden' },
+  fenceHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  fenceLang: { fontSize: 11, fontWeight: '600', textTransform: 'lowercase' },
+  copyButton: { flexDirection: 'row', alignItems: 'center', gap: 4, padding: 2 },
+  copyText: { fontSize: 11, fontWeight: '600' },
+  fenceCode: {
+    fontFamily: 'monospace' as never,
+    fontSize: 12,
+    lineHeight: 17,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+  },
   thinkingRow: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 2 },
   thinkingText: { fontSize: 13, fontStyle: 'italic' },
 });

@@ -4,6 +4,7 @@
  * write/edit proposals gated behind Approve/Reject diff cards.
  */
 import { Ionicons } from '@expo/vector-icons';
+import * as Clipboard from 'expo-clipboard';
 import { router } from 'expo-router';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -23,6 +24,7 @@ import { ModelPickerModal } from '@/src/components/agent/ModelPickerModal';
 import { usePalette } from '@/src/constants/theme';
 import { estimateTokens } from '@/src/lib/ai/agent';
 import { useProviderRegistry } from '@/src/lib/ai/registry';
+import { sessionToMarkdown } from '@/src/lib/ai/sessionExport';
 import { agentTargetLabel, useAgentStore } from '@/src/store/agentStore';
 import { allProjectFiles, useProjectStore } from '@/src/store/projectStore';
 
@@ -56,11 +58,20 @@ export default function AgentScreen() {
   );
 
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [exportedAt, setExportedAt] = useState<number | null>(null);
   // subscribe for label reactivity
   useProviderRegistry((s) => s.defaultProviderId);
   useAgentStore((s) => s.activeProviderId);
   useAgentStore((s) => s.activeModel);
   const targetLabel = agentTargetLabel();
+
+  /** US-09: copy the whole session as Markdown to the clipboard. */
+  const exportSession = async () => {
+    const markdown = sessionToMarkdown(messages, { target: targetLabel, project: projectName });
+    await Clipboard.setStringAsync(markdown).catch(() => undefined);
+    setExportedAt(Date.now());
+    setTimeout(() => setExportedAt(null), 2200);
+  };
 
   const listRef = useRef<FlatList>(null);
   useEffect(() => {
@@ -113,17 +124,34 @@ export default function AgentScreen() {
             </Text>
           </Pressable>
           {messages.length > 0 && (
-            <Pressable
-              onPress={newChat}
-              style={({ pressed }) => [
-                styles.iconButton,
-                pressed && { backgroundColor: palette.surfacePressed },
-              ]}
-              accessibilityRole="button"
-              accessibilityLabel="New chat"
-            >
-              <Ionicons name="add" size={20} color={palette.text} />
-            </Pressable>
+            <>
+              <Pressable
+                onPress={() => void exportSession()}
+                style={({ pressed }) => [
+                  styles.iconButton,
+                  pressed && { backgroundColor: palette.surfacePressed },
+                ]}
+                accessibilityRole="button"
+                accessibilityLabel="Export chat as Markdown"
+              >
+                <Ionicons
+                  name={exportedAt ? 'checkmark' : 'share-social-outline'}
+                  size={18}
+                  color={exportedAt ? palette.success : palette.text}
+                />
+              </Pressable>
+              <Pressable
+                onPress={newChat}
+                style={({ pressed }) => [
+                  styles.iconButton,
+                  pressed && { backgroundColor: palette.surfacePressed },
+                ]}
+                accessibilityRole="button"
+                accessibilityLabel="New chat"
+              >
+                <Ionicons name="add" size={20} color={palette.text} />
+              </Pressable>
+            </>
           )}
         </View>
       </View>
@@ -200,11 +228,12 @@ export default function AgentScreen() {
 
             {/* Session status strip */}
             {messages.length > 0 && (
-              <Text style={[styles.statusStrip, { color: palette.textSecondary }]}>
-                {messages.filter((m) => !m.hidden).length} messages · ≈
-                {sessionTokens.toLocaleString()} tokens
-                {phase === 'awaiting-approval' ? ' · waiting for your approvals' : ''}
-                {phase === 'streaming' ? ' · streaming…' : ''}
+              <Text style={[styles.statusStrip, { color: exportedAt ? palette.success : palette.textSecondary }]}>
+                {exportedAt
+                  ? 'Session markdown copied to clipboard ✓'
+                  : `${messages.filter((m) => !m.hidden).length} messages · ≈${sessionTokens.toLocaleString()} tokens${
+                      phase === 'awaiting-approval' ? ' · waiting for your approvals' : ''
+                    }${phase === 'streaming' ? ' · streaming…' : ''}`}
               </Text>
             )}
 
