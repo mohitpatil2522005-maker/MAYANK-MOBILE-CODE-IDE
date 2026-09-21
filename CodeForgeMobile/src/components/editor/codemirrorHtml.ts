@@ -77,12 +77,22 @@ async function main() {
   };
 
   let changeTimer = null;
+  let selTimer = null;
   const onDocChange = EditorView.updateListener.of((update) => {
-    if (!update.docChanged || suppressChange) return;
-    if (changeTimer) clearTimeout(changeTimer);
-    changeTimer = setTimeout(() => {
-      post({ type: 'change', value: view.state.doc.toString() });
-    }, 350);
+    if (update.docChanged && !suppressChange) {
+      if (changeTimer) clearTimeout(changeTimer);
+      changeTimer = setTimeout(() => {
+        post({ type: 'change', value: view.state.doc.toString() });
+      }, 350);
+    }
+    if (update.selectionSet || update.docChanged) {
+      if (selTimer) clearTimeout(selTimer);
+      selTimer = setTimeout(() => {
+        const sel = view.state.selection.main;
+        const text = sel.empty ? '' : view.state.sliceDoc(sel.from, sel.to);
+        post({ type: 'selection', text: text.slice(0, 4000) });
+      }, 220);
+    }
   });
 
   const themeFor = (isDark, px) => [

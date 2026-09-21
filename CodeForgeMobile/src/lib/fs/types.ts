@@ -30,4 +30,11 @@ export interface ProjectFS {
   restoreProject(rootUri: string): Promise<PickedProject | null>;
   readFile(uri: string): Promise<string>;
   writeFile(uri: string, content: string): Promise<void>;
+  /**
+   * Create a new file (parent directories included) and write content.
+   * `relativePath` is project-relative ("src/new/util.ts"). Returns the
+   * created node so the tree can update. Optional: implementations without
+   * create support (none currently) may omit it — the agent surfaces an error.
+   */
+  createFile?(relativePath: string, content: string): Promise<FileNode>;
 }

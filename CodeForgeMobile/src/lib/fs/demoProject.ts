@@ -97,6 +97,15 @@ export function writeDemoFile(uri: string, content: string): void {
   memory.set(key, content);
 }
 
+/** Create a new in-memory demo file (used by the agent's write_file tool). */
+export function createDemoFile(relativePath: string, content: string): FileNode {
+  const rel = relativePath.replace(/^\/+/, '');
+  if (!rel) throw new Error('Empty file path');
+  memory.set(rel, content);
+  const name = rel.split('/').pop() ?? rel;
+  return { uri: DEMO_ROOT + rel, name, path: rel, type: 'file' };
+}
+
 /** Build the file tree from the in-memory map. */
 function buildTree(): FileNode[] {
   const root: FileNode = {

@@ -12,7 +12,13 @@
 import * as FileSystem from 'expo-file-system/legacy';
 import { Platform } from 'react-native';
 
-import { createDemoProject, isDemoUri, readDemoFile, writeDemoFile } from './demoProject';
+import {
+  createDemoFile,
+  createDemoProject,
+  isDemoUri,
+  readDemoFile,
+  writeDemoFile,
+} from './demoProject';
 import type { FileNode, PickedProject, ProjectFS } from './types';
 
 const SKIP_DIRS = new Set([
@@ -145,18 +151,25 @@ export const projectFS: ProjectFS = {
             }),
         );
       }
+      _setProjectRoot(root);
       return scanProject(root, 'demo-project');
     }
 
     const permission = await FileSystem.StorageAccessFramework.requestDirectoryPermissionsAsync();
     if (!permission.granted) return null;
+    _setProjectRoot(permission.directoryUri);
     return scanProject(permission.directoryUri, projectNameFromRoot(permission.directoryUri));
   },
 
   async restoreProject(rootUri: string): Promise<PickedProject | null> {
-    if (isDemoUri(rootUri)) return createDemoProject(true);
+    if (isDemoUri(rootUri)) {
+      _setProjectRoot(rootUri);
+      return createDemoProject(true);
+    }
     try {
-      return await scanProject(rootUri, projectNameFromRoot(rootUri));
+      const project = await scanProject(rootUri, projectNameFromRoot(rootUri));
+      _setProjectRoot(rootUri);
+      return project;
     } catch {
       return null; // SAF permission lost, folder moved, etc. → caller re-picks.
     }
@@ -174,7 +187,60 @@ export const projectFS: ProjectFS = {
     }
     await FileSystem.writeAsStringAsync(uri, content);
   },
+
+  async createFile(relativePath: string, content: string): Promise<FileNode> {
+    const rel = relativePath.replace(/^\/+/, '');
+    if (!rel) throw new Error('Empty file path');
+    const name = rel.split('/').pop() ?? rel;
+
+    if (lastRootIsDemo()) return createDemoFile(rel, content);
+    const rootUri = lastRootUri();
+    if (!rootUri) throw new Error('No project open');
+
+    if (rootUri.startsWith('content://')) {
+      // SAF: walk/create the directory chain, then create the document.
+      const segments = rel.split('/');
+      const fileName = segments.pop() ?? rel;
+      let dirUri = rootUri;
+      for (const segment of segments) {
+        const existing = await listChildren(dirUri);
+        const match = existing.find((c) => c.name === segment);
+        if (match) {
+          dirUri = match.uri;
+        } else {
+          dirUri = await FileSystem.StorageAccessFramework.makeDirectoryAsync(dirUri, segment);
+        }
+      }
+      const fileUri = await FileSystem.StorageAccessFramework.createFileAsync(
+        dirUri,
+        fileName,
+        'text/plain',
+      );
+      await FileSystem.writeAsStringAsync(fileUri, content);
+      return { uri: fileUri, name: fileName, path: rel, type: 'file' };
+    }
+
+    // Plain filesystem (iOS sandbox).
+    const target = (rootUri.endsWith('/') ? rootUri : rootUri + '/') + rel;
+    await FileSystem.makeDirectoryAsync(target.slice(0, target.lastIndexOf('/') + 1), {
+      intermediates: true,
+    }).catch(() => undefined);
+    await FileSystem.writeAsStringAsync(target, content);
+    return { uri: target, name, path: rel, type: 'file' };
+  },
 };
+
+/** Root tracking for createFile (the FS layer itself is stateless otherwise). */
+let currentRootUri: string | null = null;
+function lastRootUri(): string | null {
+  return currentRootUri;
+}
+function lastRootIsDemo(): boolean {
+  return currentRootUri !== null && isDemoUri(currentRootUri);
+}
+export function _setProjectRoot(uri: string | null): void {
+  currentRootUri = uri;
+}
 
 function flattenUris(nodes: FileNode[]): FileNode[] {
   const out: FileNode[] = [];

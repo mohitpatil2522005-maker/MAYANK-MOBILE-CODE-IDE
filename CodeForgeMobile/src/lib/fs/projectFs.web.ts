@@ -6,7 +6,13 @@
  *   persistence is a post-MVP enhancement, so restore returns null for now).
  * - Other browsers: falls back to the in-memory demo project.
  */
-import { createDemoProject, isDemoUri, readDemoFile, writeDemoFile } from './demoProject';
+import {
+  createDemoFile,
+  createDemoProject,
+  isDemoUri,
+  readDemoFile,
+  writeDemoFile,
+} from './demoProject';
 import type { FileNode, PickedProject, ProjectFS } from './types';
 
 // --- Minimal File System Access typings (kept local to avoid DOM lib coupling) ---
@@ -24,6 +30,8 @@ interface WebDirectoryHandle {
   kind: 'directory';
   name: string;
   values(): AsyncIterable<WebFileHandle | WebDirectoryHandle>;
+  getDirectoryHandle(name: string, opts?: { create?: boolean }): Promise<WebDirectoryHandle>;
+  getFileHandle(name: string, opts?: { create?: boolean }): Promise<WebFileHandle>;
 }
 type WebHandle = WebFileHandle | WebDirectoryHandle;
 
@@ -54,6 +62,14 @@ const MAX_DEPTH = 8;
 
 /** Session-scoped handle registry: uri → handle. */
 const handles = new Map<string, WebHandle>();
+/** Root directory handle of the picked project (for restore + createFile). */
+let rootHandle: WebDirectoryHandle | null = null;
+/** True while the in-memory demo project is the active root. */
+let demoActive = false;
+
+function lastRootIsDemoWeb(): boolean {
+  return demoActive;
+}
 
 async function scanWebDir(
   dir: WebDirectoryHandle,
@@ -107,6 +123,7 @@ export const projectFS: ProjectFS = {
     const w = webWindow();
     if (!w?.showDirectoryPicker) {
       // Unsupported browser → demo project keeps the app usable.
+      demoActive = true;
       return createDemoProject();
     }
     let root: WebDirectoryHandle;
@@ -117,14 +134,44 @@ export const projectFS: ProjectFS = {
       throw err;
     }
     handles.clear();
+    demoActive = false;
+    rootHandle = root;
     const tree = await scanWebDir(root, '', 0, { count: 0 });
     return { name: root.name, rootUri: WEB_SCHEME, tree };
   },
 
   async restoreProject(rootUri: string): Promise<PickedProject | null> {
-    if (isDemoUri(rootUri)) return createDemoProject(true);
-    // Web handles can't be restored without IndexedDB persistence (post-MVP).
+    if (isDemoUri(rootUri)) {
+      demoActive = true;
+      return createDemoProject(true);
+    }
+    // Handles survive only for the session (IndexedDB persistence is post-MVP).
+    if (rootUri === WEB_SCHEME && rootHandle) {
+      demoActive = false;
+      const tree = await scanWebDir(rootHandle, '', 0, { count: 0 });
+      return { name: rootHandle.name, rootUri: WEB_SCHEME, tree };
+    }
     return null;
+  },
+
+  async createFile(relativePath: string, content: string): Promise<FileNode> {
+    const rel = relativePath.replace(/^\/+/, '');
+    if (!rel) throw new Error('Empty file path');
+    if (lastRootIsDemoWeb()) return createDemoFile(rel, content);
+    if (!rootHandle) throw new Error('No project open');
+    const segments = rel.split('/');
+    const fileName = segments.pop() ?? rel;
+    let dir = rootHandle;
+    for (const segment of segments) {
+      dir = await dir.getDirectoryHandle(segment, { create: true });
+    }
+    const fileHandle = await dir.getFileHandle(fileName, { create: true });
+    const writable = await fileHandle.createWritable();
+    await writable.write(content);
+    await writable.close();
+    const uri = WEB_SCHEME + rel;
+    handles.set(uri, fileHandle);
+    return { uri, name: fileName, path: rel, type: 'file' };
   },
 
   async readFile(uri: string): Promise<string> {

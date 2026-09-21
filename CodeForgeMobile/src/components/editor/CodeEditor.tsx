@@ -34,6 +34,8 @@ export interface CodeEditorProps {
   editable?: boolean;
   onChange: (value: string) => void;
   onSaveShortcut?: () => void;
+  /** Fired (debounced) with the current selection text, '' when empty. */
+  onSelectionChange?: (text: string) => void;
 }
 
 type OutboundMessage =
@@ -45,8 +47,9 @@ type OutboundMessage =
   | { type: 'focus' };
 
 interface InboundMessage {
-  type: 'ready' | 'change' | 'save' | 'error';
+  type: 'ready' | 'change' | 'save' | 'error' | 'selection';
   value?: string;
+  text?: string;
   message?: string;
 }
 
@@ -58,6 +61,7 @@ export default function CodeEditor({
   vim,
   onChange,
   onSaveShortcut,
+  onSelectionChange,
 }: CodeEditorProps) {
   const webRef = useRef<WebViewHandle>(null);
   const ready = useRef(false);
@@ -66,8 +70,8 @@ export default function CodeEditor({
   const lastKeystrokeValue = useRef(value);
   const latest = useRef({ language, dark, fontSize, vim });
   latest.current = { language, dark, fontSize, vim };
-  const callbacks = useRef({ onChange, onSaveShortcut });
-  callbacks.current = { onChange, onSaveShortcut };
+  const callbacks = useRef({ onChange, onSaveShortcut, onSelectionChange });
+  callbacks.current = { onChange, onSaveShortcut, onSelectionChange };
 
   // HTML depends only on initial appearance; updates go through messages.
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -113,6 +117,8 @@ export default function CodeEditor({
       callbacks.current.onChange(msg.value);
     } else if (msg.type === 'save') {
       callbacks.current.onSaveShortcut?.();
+    } else if (msg.type === 'selection') {
+      callbacks.current.onSelectionChange?.(msg.text ?? '');
     } else if (msg.type === 'error') {
       // Editor-page errors surface in dev mode only; never crash the app.
       if (__DEV__) console.warn('[CodeEditor WebView]', msg.message);

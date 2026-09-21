@@ -1,7 +1,10 @@
 import { DarkTheme, DefaultTheme, Stack, ThemeProvider } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
+import { useEffect } from 'react';
 
 import { usePalette } from '@/src/constants/theme';
+import { useProviderRegistry } from '@/src/lib/ai/registry';
+import { useAgentStore } from '@/src/store/agentStore';
 
 export {
   // Catch any errors thrown by the Layout component.
@@ -10,6 +13,12 @@ export {
 
 export default function RootLayout() {
   const palette = usePalette();
+
+  // One-time hydration: provider configs (AsyncStorage) + agent model pref.
+  useEffect(() => {
+    void useProviderRegistry.getState().hydrate();
+    void useAgentStore.getState().loadModelPref();
+  }, []);
 
   return (
     <ThemeProvider value={palette.dark ? DarkTheme : DefaultTheme}>

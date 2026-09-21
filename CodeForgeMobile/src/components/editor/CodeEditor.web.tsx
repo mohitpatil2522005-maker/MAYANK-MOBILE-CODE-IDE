@@ -21,6 +21,8 @@ export interface CodeEditorProps {
   editable?: boolean;
   onChange: (value: string) => void;
   onSaveShortcut?: () => void;
+  /** Fired with the current selection text, '' when empty. */
+  onSelectionChange?: (text: string) => void;
 }
 
 const langCache = new Map<LanguageId, Promise<Extension>>();
@@ -102,11 +104,15 @@ export default function CodeEditor({
   editable = true,
   onChange,
   onSaveShortcut,
+  onSelectionChange,
 }: CodeEditorProps) {
   const langExt = useLazyExtension(true, () => loadLanguage(language), [language]);
   const vimExt = useLazyExtension(vim, loadVim, []);
   const saveRef = useRef(onSaveShortcut);
   saveRef.current = onSaveShortcut;
+  const selectionRef = useRef(onSelectionChange);
+  selectionRef.current = onSelectionChange;
+  const lastSelection = useRef('');
 
   const extensions = useMemo<Extension[]>(() => {
     const list: Extension[] = [];
@@ -138,6 +144,15 @@ export default function CodeEditor({
       <CodeMirror
         value={value}
         onChange={onChange}
+        onUpdate={(viewUpdate) => {
+          if (!(viewUpdate.selectionSet || viewUpdate.docChanged)) return;
+          const sel = viewUpdate.state.selection.main;
+          const text = sel.empty ? '' : viewUpdate.state.sliceDoc(sel.from, sel.to).slice(0, 4000);
+          if (text !== lastSelection.current) {
+            lastSelection.current = text;
+            selectionRef.current?.(text);
+          }
+        }}
         theme={dark ? oneDark : 'light'}
         extensions={extensions}
         editable={editable}

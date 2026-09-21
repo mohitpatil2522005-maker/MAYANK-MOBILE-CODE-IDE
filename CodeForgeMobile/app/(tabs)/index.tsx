@@ -43,6 +43,7 @@ export default function EditorScreen() {
   const closeFile = useProjectStore((s) => s.closeFile);
   const updateContent = useProjectStore((s) => s.updateContent);
   const saveFile = useProjectStore((s) => s.saveFile);
+  const setSelection = useProjectStore((s) => s.setSelection);
   const clearError = useProjectStore((s) => s.clearError);
 
   const fontSize = useSettingsStore((s) => s.editorFontSize);
@@ -259,6 +260,7 @@ export default function EditorScreen() {
               vim={vimEnabled}
               onChange={(content) => updateContent(activeFile.uri, content)}
               onSaveShortcut={() => void saveFile()}
+              onSelectionChange={(text) => setSelection(text.length > 0 ? text : null)}
             />
           )}
         </View>

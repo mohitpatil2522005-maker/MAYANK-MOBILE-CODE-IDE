@@ -33,18 +33,23 @@ interface ProjectState {
   isOpeningProject: boolean;
   isSaving: boolean;
   error: string | null;
+  /** Current editor selection text (null when empty), for agent quick actions. */
+  selection: string | null;
 
   openProject: () => Promise<void>;
   openDemoProject: () => void;
   /** Restore the last project on app start. Silent when nothing to restore. */
   restoreLastProject: () => Promise<void>;
   closeProject: () => Promise<void>;
+  /** Re-scan the project tree (after external changes, e.g. agent file writes). */
+  refreshTree: () => Promise<void>;
 
   openFile: (node: FileNode) => Promise<void>;
   activateFile: (uri: string) => void;
   closeFile: (uri: string) => Promise<void>;
   updateContent: (uri: string, content: string) => void;
   saveFile: (uri?: string) => Promise<void>;
+  setSelection: (text: string | null) => void;
   clearError: () => void;
 }
 
@@ -101,6 +106,7 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
   isOpeningProject: false,
   isSaving: false,
   error: null,
+  selection: null,
 
   async openProject() {
     set({ isOpeningProject: true, error: null });
@@ -167,8 +173,26 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
     if (dirty && !(await confirmDiscardChanges(dirty.name))) return;
     autoSaveTimers.forEach((t) => clearTimeout(t));
     autoSaveTimers.clear();
-    set({ projectName: null, rootUri: null, tree: [], openFiles: [], activeUri: null });
+    set({
+      projectName: null,
+      rootUri: null,
+      tree: [],
+      openFiles: [],
+      activeUri: null,
+      selection: null,
+    });
     await AsyncStorage.removeItem(LAST_PROJECT_KEY).catch(() => undefined);
+  },
+
+  async refreshTree() {
+    const { rootUri } = get();
+    if (!rootUri) return;
+    try {
+      const restored = await projectFS.restoreProject(rootUri);
+      if (restored) set({ tree: restored.tree });
+    } catch {
+      // keep the existing tree on scan failure
+    }
   },
 
   async openFile(node) {
@@ -244,6 +268,10 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
         error: `Couldn't save ${file.path}: ${err instanceof Error ? err.message : String(err)}`,
       });
     }
+  },
+
+  setSelection(text) {
+    set({ selection: text && text.length > 0 ? text : null });
   },
 
   clearError() {

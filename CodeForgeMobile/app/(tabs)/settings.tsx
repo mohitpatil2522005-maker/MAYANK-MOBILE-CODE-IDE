@@ -8,6 +8,7 @@ import { Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-nat
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { usePalette, type Palette } from '@/src/constants/theme';
+import { ProviderList } from '@/src/components/settings/ProviderList';
 import { useProjectStore } from '@/src/store/projectStore';
 import { useSettingsStore, type ThemeMode } from '@/src/store/settingsStore';
 
@@ -117,17 +118,7 @@ export default function SettingsScreen() {
 
         {/* AI providers (Phase 4) */}
         <Section palette={palette} title="AI providers">
-          <View style={[styles.phaseCard, { borderColor: palette.border }]}>
-            <View style={styles.phaseCardHeader}>
-              <Ionicons name="key-outline" size={16} color={palette.tint} />
-              <Text style={[styles.phaseCardTitle, { color: palette.text }]}>Coming in Phase 4</Text>
-            </View>
-            <Text style={[styles.phaseCardBody, { color: palette.textSecondary }]}>
-              Add OpenAI, Anthropic, Google, Groq, or any OpenAI-compatible custom endpoint.
-              API keys are stored only in the iOS Keychain / Android Keystore — never in plain
-              storage, never sent anywhere except your chosen provider.
-            </Text>
-          </View>
+          <ProviderList palette={palette} />
         </Section>
 
         {/* Project */}
@@ -153,7 +144,7 @@ export default function SettingsScreen() {
         {/* About */}
         <Section palette={palette} title="About">
           <Text style={[styles.aboutText, { color: palette.textSecondary }]}>
-            CodeForge Mobile v0.1.0 — Phase 1 of 6 (editor core).{'\n'}
+            CodeForge Mobile v0.3.0 — editor + Forge agent + providers.{'\n'}
             See PRD.md / agent.md / master_prompt.md in the repo for the full plan.
           </Text>
         </Section>
