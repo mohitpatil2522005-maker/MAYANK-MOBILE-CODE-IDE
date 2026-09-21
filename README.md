@@ -29,8 +29,8 @@ npx tsc --noEmit          # typecheck
 | Phase | Scope | Status |
 |-------|-------|--------|
 | 1 | Editor core: file tree, tabs, CodeMirror (dark/light, vim, font size), SAF folder access (Android), sandbox/demo projects, save + auto-save | ✅ Done |
-| 2 | AI provider layer: OpenAI / Anthropic / Gemini / Groq / custom endpoints, SSE streaming, keychain storage, provider registry | ⏳ Next |
-| 3 | Agent chat UI + tool system (read/write/edit with diff approvals) | Planned |
+| 2 | AI provider layer: OpenAI / Anthropic / Gemini / Groq / custom endpoints, SSE streaming (XHR-incremental), keychain storage, provider registry, presets | ✅ Done |
+| 3 | Agent chat UI + tool system (read/write/edit with diff approvals) | ⏳ Next |
 | 4 | Provider management UI (add/test/switch providers) | Planned |
 | 5 | Editor ↔ agent bridge, polish | Planned |
 | 6 | EAS build & deploy | Planned |
