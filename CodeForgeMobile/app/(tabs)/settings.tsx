@@ -237,10 +237,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   stepperValue: { fontSize: 15, fontWeight: '600', minWidth: 24, textAlign: 'center' },
-  phaseCard: { borderWidth: 1, borderRadius: 10, padding: 12, gap: 6, borderStyle: 'dashed' },
-  phaseCardHeader: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  phaseCardTitle: { fontSize: 13.5, fontWeight: '600' },
-  phaseCardBody: { fontSize: 12.5, lineHeight: 18 },
   dangerButton: {
     flexDirection: 'row',
     alignItems: 'center',

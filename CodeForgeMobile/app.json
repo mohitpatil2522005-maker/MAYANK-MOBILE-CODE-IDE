@@ -8,9 +8,15 @@
     "scheme": "codeforgemobile",
     "userInterfaceStyle": "automatic",
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.mayank.codeforgemobile",
+      "infoPlist": {
+        "NSFaceIDUsageDescription": "CodeForge Mobile uses Face ID to protect your API keys (optional biometric app lock)."
+      }
     },
     "android": {
+      "package": "com.mayank.codeforgemobile",
+      "edgeToEdgeEnabled": true,
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/images/android-icon-foreground.png",

@@ -3,6 +3,7 @@
  * File tree + tabs + CodeMirror editor with save / auto-save.
  */
 import { Ionicons } from '@expo/vector-icons';
+import { router } from 'expo-router';
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
@@ -20,6 +21,7 @@ import { EditorTabs, type EditorTabItem } from '@/src/components/editor/EditorTa
 import { FileTree } from '@/src/components/editor/FileTree';
 import { usePalette } from '@/src/constants/theme';
 import { LANGUAGE_LABELS } from '@/src/lib/editor/languages';
+import { useAgentStore } from '@/src/store/agentStore';
 import { isDirty, useProjectStore } from '@/src/store/projectStore';
 import { useSettingsStore } from '@/src/store/settingsStore';
 
@@ -44,7 +46,13 @@ export default function EditorScreen() {
   const updateContent = useProjectStore((s) => s.updateContent);
   const saveFile = useProjectStore((s) => s.saveFile);
   const setSelection = useProjectStore((s) => s.setSelection);
+  const selection = useProjectStore((s) => s.selection);
   const clearError = useProjectStore((s) => s.clearError);
+
+  const setDraft = useAgentStore((s) => s.setDraft);
+  const lastAppliedEdit = useAgentStore((s) => s.lastAppliedEdit);
+  const clearAppliedEdit = useAgentStore((s) => s.clearAppliedEdit);
+  const [revealLine, setRevealLine] = useState<number | null>(null);
 
   const fontSize = useSettingsStore((s) => s.editorFontSize);
   const vimEnabled = useSettingsStore((s) => s.vimEnabled);
@@ -82,6 +90,31 @@ export default function EditorScreen() {
     () => openFiles.map((f) => ({ uri: f.uri, name: f.name, dirty: isDirty(f) })),
     [openFiles],
   );
+
+  // Phase 5 bridge: when the agent applies an edit to the file we have open,
+  // scroll the editor to the first changed line.
+  useEffect(() => {
+    if (lastAppliedEdit && activeFile && lastAppliedEdit.path === activeFile.path) {
+      setRevealLine(lastAppliedEdit.firstNewLine);
+      clearAppliedEdit();
+      // Reset so a later reveal of the same line still re-fires the prop change.
+      const t = setTimeout(() => setRevealLine(null), 800);
+      return () => clearTimeout(t);
+    }
+    return undefined;
+  }, [lastAppliedEdit, activeFile, clearAppliedEdit]);
+
+  /** "Send to Agent" — stage a context-aware draft and jump to the chat. */
+  const sendToAgent = () => {
+    if (activeFile && selection) {
+      setDraft(`Look at my selection in ${activeFile.path}: `);
+    } else if (activeFile) {
+      setDraft(`I need help with ${activeFile.path}: `);
+    } else {
+      setDraft('');
+    }
+    router.push('/agent');
+  };
 
   const treePanel = projectName ? (
     <View
@@ -139,6 +172,19 @@ export default function EditorScreen() {
             </Text>
           )}
         </View>
+        {activeFile && (
+          <Pressable
+            onPress={sendToAgent}
+            style={({ pressed }) => [
+              styles.headerButton,
+              pressed && { backgroundColor: palette.surfacePressed },
+            ]}
+            accessibilityRole="button"
+            accessibilityLabel="Send to agent"
+          >
+            <Ionicons name="sparkles" size={18} color={palette.tint} />
+          </Pressable>
+        )}
         {activeFile && (
           <Pressable
             onPress={() => void saveFile()}
@@ -258,6 +304,7 @@ export default function EditorScreen() {
               dark={palette.dark}
               fontSize={fontSize}
               vim={vimEnabled}
+              revealLine={revealLine}
               onChange={(content) => updateContent(activeFile.uri, content)}
               onSaveShortcut={() => void saveFile()}
               onSelectionChange={(text) => setSelection(text.length > 0 ? text : null)}

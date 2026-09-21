@@ -5,7 +5,7 @@
  */
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   FlatList,
   KeyboardAvoidingView,
@@ -21,9 +21,10 @@ import { ChatMessageItem } from '@/src/components/agent/ChatMessageItem';
 import { Composer, type QuickAction } from '@/src/components/agent/Composer';
 import { ModelPickerModal } from '@/src/components/agent/ModelPickerModal';
 import { usePalette } from '@/src/constants/theme';
+import { estimateTokens } from '@/src/lib/ai/agent';
 import { useProviderRegistry } from '@/src/lib/ai/registry';
 import { agentTargetLabel, useAgentStore } from '@/src/store/agentStore';
-import { useProjectStore } from '@/src/store/projectStore';
+import { allProjectFiles, useProjectStore } from '@/src/store/projectStore';
 
 export default function AgentScreen() {
   const palette = usePalette();
@@ -38,12 +39,21 @@ export default function AgentScreen() {
   const newChat = useAgentStore((s) => s.newChat);
   const approveToolCall = useAgentStore((s) => s.approveToolCall);
   const rejectToolCall = useAgentStore((s) => s.rejectToolCall);
+  const retryLast = useAgentStore((s) => s.retryLast);
 
   const projectName = useProjectStore((s) => s.projectName);
+  const tree = useProjectStore((s) => s.tree);
   const activeUri = useProjectStore((s) => s.activeUri);
   const openFiles = useProjectStore((s) => s.openFiles);
   const selection = useProjectStore((s) => s.selection);
+  const openFile = useProjectStore((s) => s.openFile);
   const activeFile = openFiles.find((f) => f.uri === activeUri) ?? null;
+  const projectFiles = useMemo(() => allProjectFiles(tree), [tree]);
+
+  const sessionTokens = useMemo(
+    () => messages.reduce((sum, m) => sum + estimateTokens(m.content), 0),
+    [messages],
+  );
 
   const [pickerOpen, setPickerOpen] = useState(false);
   // subscribe for label reactivity
@@ -158,8 +168,14 @@ export default function AgentScreen() {
                   message={item}
                   palette={palette}
                   busy={phase === 'streaming'}
+                  projectFiles={projectFiles}
+                  onOpenFile={(node) => {
+                    void openFile(node);
+                    router.push('/');
+                  }}
                   onApproveToolCall={(callId) => void approveToolCall(item.id, callId)}
                   onRejectToolCall={(callId) => rejectToolCall(item.id, callId)}
+                  onRetry={item.status === 'error' ? () => void retryLast() : undefined}
                 />
               )}
               contentContainerStyle={[styles.chatContent, messages.length === 0 && styles.chatEmpty]}
@@ -181,6 +197,16 @@ export default function AgentScreen() {
                 </View>
               }
             />
+
+            {/* Session status strip */}
+            {messages.length > 0 && (
+              <Text style={[styles.statusStrip, { color: palette.textSecondary }]}>
+                {messages.filter((m) => !m.hidden).length} messages · ≈
+                {sessionTokens.toLocaleString()} tokens
+                {phase === 'awaiting-approval' ? ' · waiting for your approvals' : ''}
+                {phase === 'streaming' ? ' · streaming…' : ''}
+              </Text>
+            )}
 
             <Composer
               palette={palette}
@@ -248,4 +274,10 @@ const styles = StyleSheet.create({
   chatContent: { paddingHorizontal: 12, paddingVertical: 10, flexGrow: 1 },
   chatEmpty: { justifyContent: 'center' },
   chatEmptyInner: { alignItems: 'center', gap: 10, paddingHorizontal: 30 },
+  statusStrip: {
+    fontSize: 11,
+    textAlign: 'center',
+    paddingTop: 6,
+    paddingBottom: 0,
+  },
 });

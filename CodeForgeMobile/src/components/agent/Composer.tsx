@@ -3,11 +3,11 @@
  * actions (Explain / Fix / Refactor / Comments) above the field.
  */
 import { Ionicons } from '@expo/vector-icons';
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import type { Palette } from '@/src/constants/theme';
-import type { AgentPhase } from '@/src/store/agentStore';
+import { useAgentStore, type AgentPhase } from '@/src/store/agentStore';
 
 export type QuickAction = 'explain' | 'explain-selection' | 'fix' | 'refactor' | 'comments';
 
@@ -39,9 +39,22 @@ export function Composer({
   onQuickAction,
 }: ComposerProps) {
   const [text, setText] = useState('');
+  const inputRef = useRef<TextInput>(null);
   const streaming = phase === 'streaming';
   const awaiting = phase === 'awaiting-approval';
   const canSend = text.trim().length > 0 && phase === 'idle';
+
+  // "Send to Agent" from the editor stages a draft here.
+  const draft = useAgentStore((s) => s.draft);
+  const setDraft = useAgentStore((s) => s.setDraft);
+  useEffect(() => {
+    if (draft !== null) {
+      setText((current) => (current.trim().length > 0 ? current : draft));
+      setDraft(null);
+      // Focus after the draft lands so the user can continue typing.
+      setTimeout(() => inputRef.current?.focus(), 150);
+    }
+  }, [draft, setDraft]);
 
   const submit = () => {
     if (!canSend) return;
@@ -85,6 +98,7 @@ export function Composer({
 
       <View style={styles.inputRow}>
         <TextInput
+          ref={inputRef}
           value={text}
           onChangeText={setText}
           placeholder={awaiting ? 'Resolve the approvals above to continue…' : 'Ask Forge about your code…'}

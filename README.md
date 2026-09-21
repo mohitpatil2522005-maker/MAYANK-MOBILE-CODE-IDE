@@ -32,8 +32,35 @@ npx tsc --noEmit          # typecheck
 | 2 | AI provider layer: OpenAI / Anthropic / Gemini / Groq / custom endpoints, SSE streaming (XHR-incremental), keychain storage, provider registry, presets | ✅ Done |
 | 3 | Agent chat: streaming markdown UI, tool-call parsing, read-only auto-tools, write/edit diff previews with Approve/Reject, context injection, cancel, turn cap | ✅ Done |
 | 4 | Provider management UI: add/edit/test/delete/default, keychain key entry, model fetch, custom endpoints | ✅ Done (core) |
-| 5 | Editor ↔ agent bridge polish, quick-action context chips, per-chat provider switching UI | 🔶 Partial (model picker done) |
-| 6 | EAS build & deploy | Planned |
+| 5 | Editor ↔ agent bridge (Send to Agent, file links in chat, reveal applied edits), Retry on errors, key-missing guidance, session tokens, transport-level tests | ✅ Done |
+| 6 | EAS build config (`eas.json`, bundle IDs), privacy policy, store assets | 🔶 Config done (builds not run here) |
+
+### Native builds (Phase 6)
+
+```bash
+cd CodeForgeMobile
+# Dev client with react-native-keychain support (required — Expo Go can't run keychain):
+npx eas build --profile development --platform android
+npx eas build --profile development --platform ios
+# Internal preview APK:
+npx eas build --profile preview --platform android
+```
+
+Requires an Expo/EAS account (`npx eas login`). Config lives in `eas.json`;
+privacy policy in `CodeForgeMobile/PRIVACY.md`.
+
+### Manual E2E checklist (device)
+
+- [ ] Add OpenAI key → Test → chat → streaming replies
+- [ ] Add Anthropic / Google / Groq keys → chat works
+- [ ] Add custom endpoint (`http://<lan-ip>:11434/v1` for Ollama) → chat works
+- [ ] Agent reads file (tool card shows content)
+- [ ] Agent proposes edit → diff shown → **Approve** → file changed + editor reveals changed line
+- [ ] Agent proposes edit → **Reject** → file untouched, agent adapts
+- [ ] Switch provider mid-chat via header picker
+- [ ] Delete provider → key removed from keychain
+- [ ] App backgrounded mid-stream → stops cleanly
+- [ ] Offline → editor works; agent surfaces a network error with Retry
 
 ## 🔐 Security model (non-negotiable)
 

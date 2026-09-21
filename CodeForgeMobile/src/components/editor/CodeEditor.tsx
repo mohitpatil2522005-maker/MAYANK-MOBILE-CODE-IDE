@@ -36,6 +36,8 @@ export interface CodeEditorProps {
   onSaveShortcut?: () => void;
   /** Fired (debounced) with the current selection text, '' when empty. */
   onSelectionChange?: (text: string) => void;
+  /** 1-based line to scroll to + select (e.g. after an agent edit applies). */
+  revealLine?: number | null;
 }
 
 type OutboundMessage =
@@ -44,6 +46,7 @@ type OutboundMessage =
   | { type: 'setTheme'; dark: boolean }
   | { type: 'setFontSize'; px: number }
   | { type: 'setVim'; enabled: boolean }
+  | { type: 'revealLine'; line: number }
   | { type: 'focus' };
 
 interface InboundMessage {
@@ -62,6 +65,7 @@ export default function CodeEditor({
   onChange,
   onSaveShortcut,
   onSelectionChange,
+  revealLine = null,
 }: CodeEditorProps) {
   const webRef = useRef<WebViewHandle>(null);
   const ready = useRef(false);
@@ -94,6 +98,10 @@ export default function CodeEditor({
   useEffect(() => post({ type: 'setTheme', dark }), [dark]);
   useEffect(() => post({ type: 'setFontSize', px: fontSize }), [fontSize]);
   useEffect(() => post({ type: 'setVim', enabled: vim }), [vim]);
+  useEffect(() => {
+    if (revealLine) post({ type: 'revealLine', line: revealLine });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [revealLine]);
 
   const handleMessage = (event: WebViewMessageEvent) => {
     let msg: InboundMessage;

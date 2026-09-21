@@ -19,6 +19,7 @@ import {
   SELECTION_CHAR_CAP,
   type ToolFeedback,
 } from '@/src/lib/ai/agent';
+import { PROVIDER_PRESETS } from '@/src/lib/ai/presets';
 import { getDefaultProvider, useProviderRegistry } from '@/src/lib/ai/registry';
 import { createProviderClient } from '@/src/lib/ai/providers';
 import {
@@ -87,6 +88,10 @@ interface AgentSessionState {
   activeProviderId: string | null;
   activeModel: string | null;
   modelPrefLoaded: boolean;
+  /** Prompt text staged by "Send to Agent" in the editor; Composer consumes it. */
+  draft: string | null;
+  /** Set when the agent applies an edit; the editor reveals the changed line. */
+  lastAppliedEdit: { path: string; firstNewLine: number } | null;
 
   loadModelPref: () => Promise<void>;
   selectModel: (providerId: string, model: string) => void;
@@ -95,6 +100,10 @@ interface AgentSessionState {
   cancelRun: () => void;
   approveToolCall: (messageId: string, callId: string) => Promise<void>;
   rejectToolCall: (messageId: string, callId: string) => void;
+  /** Re-send after an API error: drops the failed assistant turn, re-streams. */
+  retryLast: () => Promise<void>;
+  setDraft: (text: string | null) => void;
+  clearAppliedEdit: () => void;
 }
 
 let runCounter = 0;
@@ -237,6 +246,14 @@ export const useAgentStore = create<AgentSessionState>()((set, get) => {
     set((s) => ({ messages: [...s.messages, assistantMessage], phase: 'streaming' }));
 
     const apiKey = await getApiKey(provider.id);
+    if (PROVIDER_PRESETS[provider.type].requiresKey && !apiKey) {
+      patchMessage(assistantId, {
+        status: 'error',
+        content: `No API key stored for **${provider.name}**.\n\nAdd it in **Settings → Providers → Edit**, then tap Retry. The key goes into the OS keychain and is only sent to ${provider.baseURL}.`,
+      });
+      set({ phase: 'idle' });
+      return;
+    }
     const { system, history } = buildRequestMessages();
     const client = createProviderClient(provider);
 
@@ -373,6 +390,8 @@ export const useAgentStore = create<AgentSessionState>()((set, get) => {
     activeProviderId: null,
     activeModel: null,
     modelPrefLoaded: false,
+    draft: null,
+    lastAppliedEdit: null,
 
     async loadModelPref() {
       if (get().modelPrefLoaded) return;
@@ -437,6 +456,15 @@ export const useAgentStore = create<AgentSessionState>()((set, get) => {
         resultPreview: result.feedback.slice(0, 1_500),
         feedbackFull: result.feedback,
       });
+      if (result.ok) {
+        // Phase 5: the editor reveals the first changed line.
+        set({
+          lastAppliedEdit: {
+            path: state.preview.path,
+            firstNewLine: result.firstChangedLine ?? 1,
+          },
+        });
+      }
       await maybeResume(messageId);
     },
 
@@ -448,6 +476,23 @@ export const useAgentStore = create<AgentSessionState>()((set, get) => {
         summary: 'Rejected by user',
       });
       void maybeResume(messageId);
+    },
+
+    async retryLast() {
+      if (get().phase !== 'idle') return;
+      const msgs = get().messages;
+      const last = msgs[msgs.length - 1];
+      if (!last || last.role !== 'assistant' || last.status !== 'error') return;
+      set({ messages: msgs.slice(0, -1) });
+      await streamTurn();
+    },
+
+    setDraft(text) {
+      set({ draft: text });
+    },
+
+    clearAppliedEdit() {
+      set({ lastAppliedEdit: null });
     },
   };
 });

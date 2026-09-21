@@ -3,12 +3,14 @@
  * system notes (centered pill) — plus tool call cards for assistant turns.
  */
 import { Ionicons } from '@expo/vector-icons';
-import React from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import React, { useMemo } from 'react';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import Markdown from 'react-native-markdown-display';
 
 import type { Palette } from '@/src/constants/theme';
+import { extractProjectFileRefs } from '@/src/lib/ai/fileRefs';
 import { stripStreamingToolText } from '@/src/lib/ai/tools';
+import type { FileNode } from '@/src/lib/fs/types';
 import type { AgentMessage } from '@/src/store/agentStore';
 import { ToolCallCard } from './ToolCallCard';
 
@@ -16,17 +18,31 @@ interface ChatMessageItemProps {
   message: AgentMessage;
   palette: Palette;
   busy: boolean;
+  projectFiles: FileNode[];
+  onOpenFile: (node: FileNode) => void;
   onApproveToolCall: (callId: string) => void;
   onRejectToolCall: (callId: string) => void;
+  onRetry?: () => void;
 }
 
 export function ChatMessageItem({
   message,
   palette,
   busy,
+  projectFiles,
+  onOpenFile,
   onApproveToolCall,
   onRejectToolCall,
+  onRetry,
 }: ChatMessageItemProps) {
+  const fileRefs = useMemo(
+    () =>
+      message.role === 'assistant' && message.status === 'complete'
+        ? extractProjectFileRefs(message.content, projectFiles)
+        : [],
+    [message.role, message.status, message.content, projectFiles],
+  );
+
   if (message.hidden) return null;
 
   if (message.role === 'note') {
@@ -114,13 +130,21 @@ export function ChatMessageItem({
             {message.status === 'cancelled' && (
               <Text style={[styles.stateHint, { color: palette.textSecondary }]}>— cancelled</Text>
             )}
-            {message.status === 'error' && (
-              <View style={styles.errorRow}>
-                <Ionicons name="alert-circle-outline" size={13} color={palette.danger} />
-                <Text style={[styles.errorHint, { color: palette.danger }]}>
-                  Request failed — check provider settings and try again.
-                </Text>
-              </View>
+            {message.status === 'error' && onRetry && (
+              <Pressable
+                onPress={onRetry}
+                disabled={busy}
+                style={({ pressed }) => [
+                  styles.retryButton,
+                  { borderColor: palette.tint },
+                  (pressed || busy) && { opacity: 0.7 },
+                ]}
+                accessibilityRole="button"
+                accessibilityLabel="Retry request"
+              >
+                <Ionicons name="refresh" size={13} color={palette.tint} />
+                <Text style={[styles.retryText, { color: palette.tint }]}>Retry</Text>
+              </Pressable>
             )}
           </>
         )}
@@ -136,6 +160,31 @@ export function ChatMessageItem({
           onReject={() => onRejectToolCall(call.callId)}
         />
       ))}
+
+      {/* Phase 5 bridge: open files the agent mentioned directly in the editor. */}
+      {message.status === 'complete' && fileRefs.length > 0 && (
+        <View style={styles.fileRefsRow}>
+          <Ionicons name="open-outline" size={12} color={palette.textSecondary} />
+          {fileRefs.map((node) => (
+            <Pressable
+              key={node.uri}
+              onPress={() => onOpenFile(node)}
+              style={({ pressed }) => [
+                styles.fileRefChip,
+                { borderColor: palette.border, backgroundColor: palette.surface },
+                pressed && { backgroundColor: palette.surfacePressed },
+              ]}
+              accessibilityRole="button"
+              accessibilityLabel={`Open ${node.path} in editor`}
+            >
+              <Ionicons name="document-text-outline" size={12} color={palette.tint} />
+              <Text style={[styles.fileRefText, { color: palette.tint }]} numberOfLines={1}>
+                {node.path}
+              </Text>
+            </Pressable>
+          ))}
+        </View>
+      )}
     </View>
   );
 }
@@ -184,8 +233,36 @@ const styles = StyleSheet.create({
     maxWidth: '94%',
   },
   stateHint: { fontSize: 12, marginTop: 6 },
-  errorRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 8 },
-  errorHint: { fontSize: 12, flexShrink: 1 },
+  retryButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    gap: 5,
+    borderWidth: 1,
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    marginTop: 10,
+  },
+  retryText: { fontSize: 12.5, fontWeight: '700' },
+  fileRefsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: 6,
+    marginTop: 6,
+  },
+  fileRefChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    borderWidth: 1,
+    borderRadius: 999,
+    paddingHorizontal: 9,
+    paddingVertical: 4,
+    maxWidth: 240,
+  },
+  fileRefText: { fontSize: 11.5, fontWeight: '600', flexShrink: 1 },
   thinkingRow: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 2 },
   thinkingText: { fontSize: 13, fontStyle: 'italic' },
 });

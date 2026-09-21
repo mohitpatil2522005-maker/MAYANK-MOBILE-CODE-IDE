@@ -23,6 +23,8 @@ export interface CodeEditorProps {
   onSaveShortcut?: () => void;
   /** Fired with the current selection text, '' when empty. */
   onSelectionChange?: (text: string) => void;
+  /** 1-based line to scroll to + select (e.g. after an agent edit applies). */
+  revealLine?: number | null;
 }
 
 const langCache = new Map<LanguageId, Promise<Extension>>();
@@ -105,6 +107,7 @@ export default function CodeEditor({
   onChange,
   onSaveShortcut,
   onSelectionChange,
+  revealLine = null,
 }: CodeEditorProps) {
   const langExt = useLazyExtension(true, () => loadLanguage(language), [language]);
   const vimExt = useLazyExtension(vim, loadVim, []);
@@ -113,6 +116,21 @@ export default function CodeEditor({
   const selectionRef = useRef(onSelectionChange);
   selectionRef.current = onSelectionChange;
   const lastSelection = useRef('');
+  const viewRef = useRef<EditorView | null>(null);
+
+  // Scroll/select a line (agent edit applied, file link, …).
+  useEffect(() => {
+    const view = viewRef.current;
+    if (!revealLine || !view) return;
+    const doc = view.state.doc;
+    const line = doc.line(Math.max(1, Math.min(revealLine, doc.lines)));
+    view.dispatch({
+      selection: { anchor: line.from },
+      effects: EditorView.scrollIntoView(line.from, { y: 'center' }),
+      userEvent: 'select',
+    });
+    view.focus();
+  }, [revealLine]);
 
   const extensions = useMemo<Extension[]>(() => {
     const list: Extension[] = [];
@@ -156,6 +174,9 @@ export default function CodeEditor({
         theme={dark ? oneDark : 'light'}
         extensions={extensions}
         editable={editable}
+        onCreateEditor={(view) => {
+          viewRef.current = view;
+        }}
         height="100%"
         style={styles.codemirror}
         basicSetup={{

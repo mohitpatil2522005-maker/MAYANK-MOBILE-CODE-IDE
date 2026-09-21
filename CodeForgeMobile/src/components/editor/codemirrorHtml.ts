@@ -186,6 +186,15 @@ async function main() {
     else if (msg.type === 'setTheme') setTheme(!!msg.dark);
     else if (msg.type === 'setFontSize') setFontSize(msg.px || 14);
     else if (msg.type === 'setVim') void setVim(!!msg.enabled);
+    else if (msg.type === 'revealLine') {
+      const doc = view.state.doc;
+      const line = doc.line(Math.max(1, Math.min(msg.line || 1, doc.lines)));
+      view.dispatch({
+        selection: { anchor: line.from },
+        effects: EditorView.scrollIntoView(line.from, { y: 'center' }),
+      });
+      view.focus();
+    }
     else if (msg.type === 'focus') view.focus();
   }
   // react-native-webview delivers postMessage on document (android) or window (ios)

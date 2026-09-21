@@ -22,6 +22,19 @@ export interface ToolExecutionResult {
   /** Body fed back to the model (already capped). */
   feedback: string;
   error?: string;
+  /** Line in the new document where the first change starts (write tools). */
+  firstChangedLine?: number;
+}
+
+/** First changed line (1-based) in the NEW document of a diff. */
+function firstChangedLineFromDiff(diff?: ComputedDiff): number | undefined {
+  if (!diff) return undefined;
+  let newLine = 0;
+  for (const line of diff.lines) {
+    if (line.type !== 'same') return newLine + 1;
+    newLine += 1;
+  }
+  return undefined;
 }
 
 export interface WritePreview {
@@ -290,6 +303,7 @@ export async function applyWriteCall(
         ok: true,
         summary: `${label} ${node.path}`,
         feedback: `User APPROVED and applied your ${call.tool} on ${node.path}. The file now contains the updated content.`,
+        firstChangedLine: firstChangedLineFromDiff(preview.diff),
       };
     }
 
@@ -308,6 +322,7 @@ export async function applyWriteCall(
       ok: true,
       summary: `Created ${created.path}`,
       feedback: `User APPROVED and created ${created.path} with your content.`,
+      firstChangedLine: 1,
     };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
