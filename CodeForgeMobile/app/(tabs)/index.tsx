@@ -17,13 +17,15 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import CodeEditor from '@/src/components/editor/CodeEditor';
+import { CommandPalette, type PaletteCommand } from '@/src/components/editor/CommandPalette';
 import { EditorTabs, type EditorTabItem } from '@/src/components/editor/EditorTabs';
 import { FileTree } from '@/src/components/editor/FileTree';
 import { usePalette, type Palette } from '@/src/constants/theme';
 import { DEFAULT_EDITOR_OPTIONS } from '@/src/lib/editor/editorOptions';
 import { LANGUAGE_LABELS } from '@/src/lib/editor/languages';
-import { useAgentStore } from '@/src/store/agentStore';
-import { isDirty, useProjectStore } from '@/src/store/projectStore';
+import { notifySuccess, tapLight, tapMedium } from '@/src/lib/haptics';
+import { agentTargetLabel, useAgentStore } from '@/src/store/agentStore';
+import { allProjectFiles, isDirty, useProjectStore } from '@/src/store/projectStore';
 import { useSettingsStore } from '@/src/store/settingsStore';
 
 export default function EditorScreen() {
@@ -51,8 +53,12 @@ export default function EditorScreen() {
   const clearError = useProjectStore((s) => s.clearError);
 
   const setDraft = useAgentStore((s) => s.setDraft);
+  const newChat = useAgentStore((s) => s.newChat);
   const lastAppliedEdit = useAgentStore((s) => s.lastAppliedEdit);
   const clearAppliedEdit = useAgentStore((s) => s.clearAppliedEdit);
+  // Provider subscriptions keep the status-bar model pill reactive.
+  useAgentStore((s) => s.activeProviderId);
+  useAgentStore((s) => s.activeModel);
   const [revealLine, setRevealLine] = useState<number | null>(null);
 
   const fontSize = useSettingsStore((s) => s.editorFontSize);
@@ -65,6 +71,8 @@ export default function EditorScreen() {
   const activeLine = useSettingsStore((s) => s.activeLineEnabled);
   const brackets = useSettingsStore((s) => s.bracketsEnabled);
   const whitespace = useSettingsStore((s) => s.whitespaceVisible);
+  const themeMode = useSettingsStore((s) => s.themeMode);
+  const setOption = useSettingsStore((s) => s.setOption);
 
   const editorOptions = useMemo(
     () => ({
@@ -82,13 +90,21 @@ export default function EditorScreen() {
 
   const [treeOpen, setTreeOpen] = useState(true);
   const [cursor, setCursor] = useState<{ line: number; col: number }>({ line: 1, col: 1 });
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  const [paletteInitial, setPaletteInitial] = useState('');
+
+  const openPalette = (initial = '') => {
+    setPaletteInitial(initial);
+    setPaletteOpen(true);
+  };
 
   useEffect(() => {
     void restoreLastProject();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Web (and external keyboards): Cmd/Ctrl+S outside the editor surface.
+  // Web (and external keyboards): Cmd/Ctrl+S save, Cmd/Ctrl+P quick-open,
+  // Cmd/Ctrl+Shift+P command mode — outside the editor surface.
   useEffect(() => {
     if (Platform.OS !== 'web') return;
     const w = globalThis as {
@@ -97,10 +113,22 @@ export default function EditorScreen() {
     };
     if (!w.addEventListener) return;
     const handler = (e: unknown) => {
-      const kev = e as { metaKey?: boolean; ctrlKey?: boolean; key?: string; preventDefault?: () => void };
-      if ((kev.metaKey || kev.ctrlKey) && String(kev.key).toLowerCase() === 's') {
+      const kev = e as {
+        metaKey?: boolean;
+        ctrlKey?: boolean;
+        shiftKey?: boolean;
+        key?: string;
+        preventDefault?: () => void;
+      };
+      const mod = kev.metaKey || kev.ctrlKey;
+      if (!mod) return;
+      const key = String(kev.key).toLowerCase();
+      if (key === 's') {
         kev.preventDefault?.();
         void saveFile();
+      } else if (key === 'p') {
+        kev.preventDefault?.();
+        openPalette(kev.shiftKey ? '>' : '');
       }
     };
     w.addEventListener('keydown', handler);
@@ -129,6 +157,7 @@ export default function EditorScreen() {
 
   /** "Send to Agent" — stage a context-aware draft and jump to the chat. */
   const sendToAgent = () => {
+    tapMedium();
     if (activeFile && selection) {
       setDraft(`Look at my selection in ${activeFile.path}: `);
     } else if (activeFile) {
@@ -138,6 +167,93 @@ export default function EditorScreen() {
     }
     router.push('/agent');
   };
+
+  // ─── Command palette (Phase 1.2) ──────────────────────────────
+  const paletteFiles = useMemo(() => allProjectFiles(tree), [tree]);
+  const dirtyUris = useMemo(
+    () => new Set(openFiles.filter((f) => isDirty(f)).map((f) => f.uri)),
+    [openFiles],
+  );
+
+  const paletteCommands = useMemo<PaletteCommand[]>(() => {
+    const list: PaletteCommand[] = [];
+    if (activeFile) {
+      list.push(
+        {
+          id: 'file.save',
+          title: `Save ${activeFile.name}`,
+          hint: 'Ctrl/Cmd+S',
+          icon: 'save-outline',
+          run: () => void saveFile().then(() => notifySuccess()),
+        },
+        {
+          id: 'file.close',
+          title: `Close ${activeFile.name}`,
+          icon: 'close-circle-outline',
+          run: () => void closeFile(activeFile.uri),
+        },
+        {
+          id: 'agent.send',
+          title: 'Send File to Agent',
+          hint: selection ? 'Includes current selection' : 'Whole file context',
+          icon: 'sparkles-outline',
+          run: sendToAgent,
+        },
+      );
+    }
+    list.push({
+      id: 'workbench.toggleTree',
+      title: 'Toggle File Tree',
+      icon: 'menu-outline',
+      run: () => setTreeOpen((o) => !o),
+    });
+    list.push({
+      id: 'workbench.toggleTheme',
+      title: `Switch to ${themeMode === 'dark' ? 'Light' : 'Dark'} Theme`,
+      icon: 'contrast-outline',
+      run: () => setOption('themeMode', themeMode === 'dark' ? 'light' : 'dark'),
+    });
+    list.push({
+      id: 'editor.toggleWrap',
+      title: `${wordWrap ? 'Disable' : 'Enable'} Word Wrap`,
+      icon: 'resize-outline',
+      run: () => setOption('wordWrap', !wordWrap),
+    });
+    list.push({
+      id: 'agent.newChat',
+      title: 'New Agent Chat',
+      icon: 'chatbubbles-outline',
+      run: () => {
+        newChat();
+        router.push('/agent');
+      },
+    });
+    list.push({
+      id: 'workbench.settings',
+      title: 'Open Settings',
+      icon: 'settings-outline',
+      run: () => router.push('/settings'),
+    });
+    if (activeFile) {
+      list.push({
+        id: 'editor.toggleTreeHide',
+        title: 'Focus Editor (hide tree)',
+        icon: 'eye-off-outline',
+        run: () => setTreeOpen(false),
+      });
+    }
+    return list;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    activeFile,
+    selection,
+    saveFile,
+    closeFile,
+    themeMode,
+    wordWrap,
+    setOption,
+    newChat,
+  ]);
 
   const treePanel = projectName ? (
     <View
@@ -158,6 +274,7 @@ export default function EditorScreen() {
         activeUri={activeUri}
         palette={palette}
         onFilePress={(node) => {
+          tapLight();
           void openFile(node);
           if (!wide) setTreeOpen(false);
         }}
@@ -193,6 +310,19 @@ export default function EditorScreen() {
             </Text>
           )}
         </View>
+        {projectName && (
+          <Pressable
+            onPress={() => openPalette('')}
+            style={({ pressed }) => [
+              styles.headerButton,
+              pressed && { backgroundColor: palette.surfacePressed },
+            ]}
+            accessibilityRole="button"
+            accessibilityLabel="Quick open (Ctrl/Cmd+P)"
+          >
+            <Ionicons name="search" size={17} color={palette.text} />
+          </Pressable>
+        )}
         {activeFile && (
           <Pressable
             onPress={sendToAgent}
@@ -208,7 +338,7 @@ export default function EditorScreen() {
         )}
         {activeFile && (
           <Pressable
-            onPress={() => void saveFile()}
+            onPress={() => void saveFile().then(() => notifySuccess())}
             disabled={!activeDirty || isSaving}
             style={({ pressed }) => [
               styles.headerButton,
@@ -235,9 +365,42 @@ export default function EditorScreen() {
         tabs={tabs}
         activeUri={activeUri}
         palette={palette}
-        onSelect={activateFile}
+        onSelect={(uri) => {
+          tapLight();
+          activateFile(uri);
+        }}
         onClose={(uri) => void closeFile(uri)}
       />
+
+      {/* Breadcrumbs (Phase 1.1) */}
+      {activeFile && (
+        <View
+          style={[
+            styles.breadcrumbs,
+            { backgroundColor: palette.bgSecondary, borderBottomColor: palette.border },
+          ]}
+        >
+          {activeFile.path.split('/').map((segment, i, all) => (
+            <View key={i} style={styles.crumbItem}>
+              {i > 0 && (
+                <Text style={[styles.crumbSep, { color: palette.textSecondary }]}>›</Text>
+              )}
+              <Text
+                numberOfLines={1}
+                style={[
+                  styles.crumbText,
+                  {
+                    color: i === all.length - 1 ? palette.text : palette.textSecondary,
+                    fontWeight: i === all.length - 1 ? '600' : '400',
+                  },
+                ]}
+              >
+                {segment}
+              </Text>
+            </View>
+          ))}
+        </View>
+      )}
 
       {/* Body */}
       <View style={styles.body}>
@@ -340,6 +503,7 @@ export default function EditorScreen() {
               palette={palette}
               cursor={cursor}
               languageLabel={LANGUAGE_LABELS[activeFile.language]}
+              providerLabel={agentTargetLabel()}
               tabSize={tabSize}
               wordWrap={wordWrap}
               vimEnabled={vimEnabled}
@@ -355,6 +519,20 @@ export default function EditorScreen() {
           </>
         )}
       </View>
+
+      {/* Command palette / quick open (Phase 1.2) */}
+      <CommandPalette
+        visible={paletteOpen}
+        onClose={() => setPaletteOpen(false)}
+        files={paletteFiles}
+        dirtyUris={dirtyUris}
+        onOpenFile={(node) => {
+          void openFile(node);
+          if (!wide) setTreeOpen(false);
+        }}
+        commands={paletteCommands}
+        initialQuery={paletteInitial}
+      />
 
       {/* Error toast */}
       {error && (
@@ -376,11 +554,12 @@ function EmptyState({ children, palette }: { children: React.ReactNode; palette:
   return <View style={[styles.empty, { backgroundColor: palette.bg }]}>{children}</View>;
 }
 
-/** Bottom strip à la VS Code: cursor position, indent, wrap, language. */
+/** Bottom strip à la VS Code: cursor position, indent, model pill, language. */
 function EditorStatusBar({
   palette,
   cursor,
   languageLabel,
+  providerLabel,
   tabSize,
   wordWrap,
   vimEnabled,
@@ -389,11 +568,13 @@ function EditorStatusBar({
   palette: Palette;
   cursor: { line: number; col: number };
   languageLabel: string;
+  providerLabel: string;
   tabSize: number;
   wordWrap: boolean;
   vimEnabled: boolean;
   autoSave: boolean;
 }) {
+  const hasProvider = providerLabel !== 'No provider';
   return (
     <View
       style={[
@@ -413,6 +594,26 @@ function EditorStatusBar({
         <Text style={[styles.statusItem, { color: palette.tint }]}>VIM</Text>
       ) : null}
       <View style={styles.statusSpacer} />
+      {/* Active AI provider/model pill (Phase 1.1) */}
+      <Pressable
+        onPress={() => router.push('/agent')}
+        hitSlop={6}
+        style={[styles.providerPill, { backgroundColor: hasProvider ? palette.tint + '22' : 'transparent' }]}
+        accessibilityRole="button"
+        accessibilityLabel={`Agent model: ${providerLabel}`}
+      >
+        <Ionicons
+          name="sparkles"
+          size={10}
+          color={hasProvider ? palette.tint : palette.textSecondary}
+        />
+        <Text
+          numberOfLines={1}
+          style={[styles.providerPillText, { color: hasProvider ? palette.tint : palette.textSecondary }]}
+        >
+          {hasProvider ? providerLabel : 'Set up AI'}
+        </Text>
+      </Pressable>
       {autoSave ? <Ionicons name="cloud-done-outline" size={12} color={palette.success} /> : null}
       <Text style={[styles.statusItem, { color: palette.textSecondary }]}>{languageLabel}</Text>
     </View>
@@ -468,6 +669,27 @@ const styles = StyleSheet.create({
   },
   statusItem: { fontSize: 11, fontWeight: '500' },
   statusSpacer: { flex: 1 },
+  providerPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 6,
+    maxWidth: 180,
+  },
+  providerPillText: { fontSize: 10.5, fontWeight: '600', flexShrink: 1 },
+  breadcrumbs: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    overflow: 'hidden',
+  },
+  crumbItem: { flexDirection: 'row', alignItems: 'center' },
+  crumbSep: { fontSize: 12, marginHorizontal: 5 },
+  crumbText: { fontSize: 12, flexShrink: 1 },
   backdrop: {
     position: 'absolute',
     top: 0,

@@ -22,7 +22,7 @@ npx expo run:android      # native Android
 npx expo run:ios          # native iOS (macOS)
 npm run web               # browser preview
 npm run typecheck         # tsc --noEmit (strict)
-npm test                  # 5 logic suites · 134 checks (SSE, tools, providers, export, settings)
+npm test                  # 6 logic suites · 151 checks (SSE, tools, providers, export, settings, fuzzy)
 ```
 
 CI runs the same typecheck + test commands on every push/PR:
@@ -40,6 +40,19 @@ CI runs the same typecheck + test commands on every push/PR:
 | 6 | EAS build config (`eas.json`, bundle IDs), privacy policy, store assets | 🔶 Config done (builds not run here) |
 
 ### Hardening ✚
+
+- **Command palette / quick open (Phase 1.2)** — header 🔍 button or
+  `Ctrl/Cmd+P` (web) opens fuzzy quick-open over all project files;
+  `>` switches to command mode (`Ctrl/Cmd+Shift+P`): save, close, send to
+  agent, toggle tree/theme/word-wrap, new chat, settings. Enter picks the
+  top match; custom subsequence scorer in `src/lib/search/fuzzy.ts`
+  (consecutive + word/camelCase boundary bonuses), fully tested.
+- **Breadcrumbs bar** — full path of the active file (`src › components ›
+  App.tsx`) between tabs and editor, VS Code-style.
+- **Status-bar model pill** — tap-to-agent `✦ Provider · model` pill next
+  to language in the VS Code-style status bar.
+- **Haptics (Phase 1.3)** — light taps on file/tab/palette picks, medium on
+  send-to-agent, success buzz on saves (iOS/Android, no-op on web).
 
 - **VS Code-style settings** — schema-driven (`src/lib/settings/schema.ts`),
   searchable settings screen with dot-namespaced ids (`editor.fontSize`,
