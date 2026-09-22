@@ -22,7 +22,7 @@ import { ChatMessageItem } from '@/src/components/agent/ChatMessageItem';
 import { Composer, type QuickAction } from '@/src/components/agent/Composer';
 import { ModelPickerModal } from '@/src/components/agent/ModelPickerModal';
 import { usePalette } from '@/src/constants/theme';
-import { estimateTokens } from '@/src/lib/ai/agent';
+import { AGENT_MODES, estimateTokens, MODE_INFO, type AgentMode } from '@/src/lib/ai/agent';
 import { useProviderRegistry } from '@/src/lib/ai/registry';
 import { sessionToMarkdown } from '@/src/lib/ai/sessionExport';
 import { agentTargetLabel, useAgentStore } from '@/src/store/agentStore';
@@ -42,6 +42,9 @@ export default function AgentScreen() {
   const approveToolCall = useAgentStore((s) => s.approveToolCall);
   const rejectToolCall = useAgentStore((s) => s.rejectToolCall);
   const retryLast = useAgentStore((s) => s.retryLast);
+  const mode = useAgentStore((s) => s.mode);
+  const setMode = useAgentStore((s) => s.setMode);
+  const usage = useAgentStore((s) => s.usage);
 
   const projectName = useProjectStore((s) => s.projectName);
   const tree = useProjectStore((s) => s.tree);
@@ -226,14 +229,56 @@ export default function AgentScreen() {
               }
             />
 
+            {/* Agent mode selector (masterprompt §9.2) */}
+            <View style={[styles.modeBar, { backgroundColor: palette.bgSecondary, borderColor: palette.border }]}>
+              {AGENT_MODES.map((m) => {
+                const active = m === mode;
+                return (
+                  <Pressable
+                    key={m}
+                    onPress={() => setMode(m as AgentMode)}
+                    disabled={phase === 'streaming'}
+                    style={({ pressed }) => [
+                      styles.modeChip,
+                      {
+                        borderColor: active ? palette.tint : palette.border,
+                        backgroundColor: active ? palette.tint + '22' : palette.surface,
+                        opacity: phase === 'streaming' && !active ? 0.5 : 1,
+                      },
+                      pressed && active && { backgroundColor: palette.tint + '33' },
+                    ]}
+                    accessibilityRole="button"
+                    accessibilityState={{ selected: active }}
+                    accessibilityLabel={`${MODE_INFO[m as AgentMode].label} mode`}
+                  >
+                    <Text
+                      style={[
+                        styles.modeChipText,
+                        { color: active ? palette.tint : palette.textSecondary },
+                      ]}
+                    >
+                      {MODE_INFO[m as AgentMode].label}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+            <Text style={[styles.modeBlurb, { color: palette.textSecondary }]}>
+              {MODE_INFO[mode].blurb}
+            </Text>
+
             {/* Session status strip */}
             {messages.length > 0 && (
               <Text style={[styles.statusStrip, { color: exportedAt ? palette.success : palette.textSecondary }]}>
                 {exportedAt
                   ? 'Session markdown copied to clipboard ✓'
                   : `${messages.filter((m) => !m.hidden).length} messages · ≈${sessionTokens.toLocaleString()} tokens${
-                      phase === 'awaiting-approval' ? ' · waiting for your approvals' : ''
-                    }${phase === 'streaming' ? ' · streaming…' : ''}`}
+                      usage.modelCalls > 0
+                        ? ` · ${usage.modelCalls} call${usage.modelCalls === 1 ? '' : 's'} · ~${usage.inTokens.toLocaleString()} in / ${usage.outTokens.toLocaleString()} out (est.)`
+                        : ''
+                    }${phase === 'awaiting-approval' ? ' · waiting for your approvals' : ''}${
+                      phase === 'streaming' ? ' · streaming…' : ''
+                    }`}
               </Text>
             )}
 
@@ -303,6 +348,20 @@ const styles = StyleSheet.create({
   chatContent: { paddingHorizontal: 12, paddingVertical: 10, flexGrow: 1 },
   chatEmpty: { justifyContent: 'center' },
   chatEmptyInner: { alignItems: 'center', gap: 10, paddingHorizontal: 30 },
+  modeBar: {
+    flexDirection: 'row',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingTop: 8,
+  },
+  modeChip: {
+    borderWidth: 1,
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+  },
+  modeChipText: { fontSize: 12, fontWeight: '700' },
+  modeBlurb: { fontSize: 11, paddingHorizontal: 14, paddingTop: 2, paddingBottom: 2 },
   statusStrip: {
     fontSize: 11,
     textAlign: 'center',

@@ -61,7 +61,7 @@
     "ios": "expo start --ios",
     "web": "expo start --web",
     "typecheck": "tsc --noEmit",
-    "test": "for f in tests/*.test.ts; do tsx \"$f\" || exit 1; done"
+    "test": "for f in tests/*.test.ts; do [ \"$f\" = \"tests/golden.test.ts\" ] && continue; tsx \"$f\" || exit 1; done && node tests/golden/build.cjs"
   },
   "private": true
 }

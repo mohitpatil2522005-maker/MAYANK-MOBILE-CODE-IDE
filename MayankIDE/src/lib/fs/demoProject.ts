@@ -8,6 +8,19 @@ import type { FileNode, PickedProject } from './types';
 export const DEMO_ROOT = 'demo://';
 export const DEMO_PROJECT_NAME = 'demo-project';
 
+/**
+ * True while the demo project is the active root. The in-memory demo is
+ * opened directly by projectStore (no picker), so the platform FS layers
+ * need this shared flag to route createFile/read/write to demo memory.
+ */
+let demoRootActive = false;
+export function setDemoRootActive(active: boolean): void {
+  demoRootActive = active;
+}
+export function isDemoRootActive(): boolean {
+  return demoRootActive;
+}
+
 const DEMO_FILES: Record<string, string> = {
   'README.md': `# Demo Project
 

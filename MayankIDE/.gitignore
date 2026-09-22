@@ -21,6 +21,9 @@ expo-env.d.ts
 # Metro
 .metro-health-check*
 
+# golden test bundle (transient build artifact)
+.tmp-golden-test.cjs
+
 # debug
 npm-debug.*
 yarn-debug.*

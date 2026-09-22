@@ -6,6 +6,57 @@ import type { FileNode } from '@/src/lib/fs/types';
 import { toolSpecsForPrompt } from './tools';
 import type { ChatMessage } from './types';
 
+/**
+ * Agent modes (masterprompt §9.2, contracted semantics):
+ *  - ask   — read-only: read/search tools only, never writes, never commands.
+ *  - plan  — read-only plus a written implementation plan in the reply;
+ *            still NO file mutation of any kind.
+ *  - agent — full loop: tools, write access behind user approval.
+ *  - goal  — like agent but runs to completion with a higher step budget;
+ *            still subject to approval for every write.
+ */
+export type AgentMode = 'ask' | 'plan' | 'agent' | 'goal';
+
+export const AGENT_MODES: readonly AgentMode[] = ['ask', 'plan', 'agent', 'goal'];
+
+export const MODE_INFO: Record<
+  AgentMode,
+  { label: string; blurb: string; promptRules: string }
+> = {
+  ask: {
+    label: 'Ask',
+    blurb: 'Read-only — explains and explores, never edits files.',
+    promptRules:
+      'This is ASK mode: read-only. You may call read_file, list_files, search_code and explain_selection. You must NOT call write_file or edit_file, and you must not present a change as if it were applied. Answer with explanations, code examples in fenced blocks (clearly labeled as suggestions), and questions.',
+  },
+  plan: {
+    label: 'Plan',
+    blurb: 'Produces a step-by-step implementation plan. No files change.',
+    promptRules:
+      'This is PLAN mode: read-only plus planning. Read what you need (read_file, list_files, search_code) and then reply with an IMPLEMENTATION PLAN in markdown: goal, assumptions, a file-by-file change list, a test/verification plan, and risks. You must NOT call write_file or edit_file and must not claim any file was changed. The user will approve the plan before anything is edited.',
+  },
+  agent: {
+    label: 'Agent',
+    blurb: 'Full loop — can edit files; every edit needs your approval.',
+    promptRules:
+      'This is AGENT mode: you may call write_file and edit_file. Every such call is shown to the user as a diff preview and applied ONLY if approved. Read a file before editing it, keep edits minimal, and wait for the tool results before continuing.',
+  },
+  goal: {
+    label: 'Goal',
+    blurb: 'Runs to completion (bigger step budget); writes still need approval.',
+    promptRules:
+      'This is GOAL mode: work toward completing the whole task in this session with as few interruptions as possible. You may call all tools; write_file/edit_file still require user approval. Batch related edits across turns, verify with search_code/read_file after applying, and finish with a concise summary of everything changed and how to verify it.',
+  },
+};
+
+/** Per-mode safety caps for agentic tool loops. */
+export const MODE_MAX_ITERATIONS: Record<AgentMode, number> = {
+  ask: 6,
+  plan: 8,
+  agent: 8,
+  goal: 24,
+};
+
 export interface AgentContext {
   projectName: string;
   fileCount: number;
@@ -15,6 +66,8 @@ export interface AgentContext {
   selection: string | null;
   /** 2-level tree listing. */
   treePreview: string;
+  /** Active mode; defaults to 'agent' (keeps pre-mode behaviour). */
+  mode?: AgentMode;
 }
 
 export const CURRENT_FILE_CHAR_CAP = 12_000;
@@ -63,9 +116,11 @@ export function capContent(content: string, cap = CURRENT_FILE_CHAR_CAP): string
 
 /** System prompt for the agent (agent.md §5 template + tool protocol). */
 export function buildSystemPrompt(ctx: AgentContext): string {
+  const mode = ctx.mode ?? 'agent';
   const parts: string[] = [
     `You are Forge, an AI coding assistant inside Mayank IDE.
 You help the user write, understand, and improve code. Be concise and helpful; use markdown (headers, lists, fenced code blocks with a language tag).`,
+    `## Mode: ${MODE_INFO[mode].label}\n${MODE_INFO[mode].promptRules}`,
     `## Current context`,
     `• Project: ${ctx.projectName} (${ctx.fileCount} files)`,
     ctx.currentFile

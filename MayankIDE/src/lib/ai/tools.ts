@@ -199,17 +199,25 @@ export function extractToolCalls(text: string): ExtractedTools {
 }
 
 /**
- * While streaming: hide any trailing tool block so users never see partial
- * JSON. Returns the text to display for the in-progress assistant message.
+ * While streaming: hide a trailing tool block so users never see partial
+ * JSON. Only an UNCLOSED trailing fence is hidden — closed ```json blocks
+ * (e.g. ordinary JSON examples in the reply) stay visible, and any prose
+ * after a completed tool block is not swallowed mid-stream.
+ * Fences pair in order (marker i opens, marker i+1 closes), so an odd
+ * trailing marker means the block is still streaming in.
  */
 export function stripStreamingToolText(text: string): string {
-  const fenceIdx = text.search(/```(tool|json)[ \t]*\r?\n?/);
+  const markers = [...text.matchAll(/```/g)].map((m) => m.index ?? 0);
+  for (let i = 0; i < markers.length; i += 2) {
+    const open = markers[i];
+    const isToolFence = /^```(tool|json)[ \t]*\r?(\n|$)/.test(text.slice(open, open + 40));
+    if (!isToolFence) continue;
+    const closed = i + 1 < markers.length;
+    if (!closed) return text.slice(0, open).trimEnd();
+  }
   const legacyIdx = text.search(/🔧\s*TOOL_CALL/);
-  let cut = -1;
-  if (fenceIdx >= 0 && legacyIdx >= 0) cut = Math.min(fenceIdx, legacyIdx);
-  else cut = Math.max(fenceIdx, legacyIdx);
-  if (cut < 0) return text;
-  return text.slice(0, cut).trimEnd();
+  if (legacyIdx >= 0) return text.slice(0, legacyIdx).trimEnd();
+  return text;
 }
 
 /** Render the specs as compact instructions for the system prompt. */

@@ -10,15 +10,24 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { create } from 'zustand';
 
 import {
+  AGENT_MODES,
   buildSystemPrompt,
   buildToolFeedbackMessage,
   capContent,
   countFiles,
+  estimateTokens,
+  MODE_MAX_ITERATIONS,
   packHistory,
   shallowTreePreview,
   SELECTION_CHAR_CAP,
+  type AgentMode,
   type ToolFeedback,
 } from '@/src/lib/ai/agent';
+import {
+  auditTarget,
+  capAuditNote,
+  recordAudit,
+} from '@/src/lib/ai/audit';
 import { PROVIDER_PRESETS } from '@/src/lib/ai/presets';
 import { getDefaultProvider, useProviderRegistry } from '@/src/lib/ai/registry';
 import { createProviderClient } from '@/src/lib/ai/providers';
@@ -39,8 +48,10 @@ import { languageFromFilename } from '@/src/lib/editor/languages';
 import { getApiKey } from '@/src/lib/storage/keychain';
 import { useProjectStore } from '@/src/store/projectStore';
 
-const MAX_ITERATIONS = 6;
+/** Safety caps per mode (masterprompt §9.2/§9.3: goal runs longer). */
+const MAX_ITERATIONS = MODE_MAX_ITERATIONS;
 const MODEL_PREF_KEY = 'mayank-ide/agentModel/v1';
+const MODE_KEY = 'mayank-ide/agentMode/v1';
 const SESSION_KEY = 'mayank-ide/agentSession/v1';
 const SESSION_MAX_MESSAGES = 80;
 
@@ -81,11 +92,22 @@ export interface AgentMessage {
 
 export type AgentPhase = 'idle' | 'streaming' | 'awaiting-approval';
 
+/** Rough token accounting for the session (estimates, not a bill). */
+export interface SessionUsage {
+  inTokens: number;
+  outTokens: number;
+  modelCalls: number;
+}
+
 interface AgentSessionState {
   messages: AgentMessage[];
   phase: AgentPhase;
   /** Agentic iterations consumed in the current user turn (safety cap). */
   turnCount: number;
+  /** Active agent mode (masterprompt §9.2): ask/plan/agent/goal. */
+  mode: AgentMode;
+  /** Session token usage (estimates; reset by New Chat). */
+  usage: SessionUsage;
   /** Provider+model used for the next request. */
   activeProviderId: string | null;
   activeModel: string | null;
@@ -100,6 +122,7 @@ interface AgentSessionState {
   /** Restore the previous chat session from AsyncStorage (multi-turn PRD §3.2). */
   hydrateSession: () => Promise<void>;
   selectModel: (providerId: string, model: string) => void;
+  setMode: (mode: AgentMode) => void;
   newChat: () => void;
   sendMessage: (text: string) => Promise<void>;
   cancelRun: () => void;
@@ -211,9 +234,12 @@ export const useAgentStore = create<AgentSessionState>()((set, get) => {
         ? capContent(project.selection, SELECTION_CHAR_CAP)
         : null,
       treePreview: shallowTreePreview(project.tree),
+      mode: get().mode,
     });
+    // App-internal "note" messages (no-provider hint, cap notices) are never
+    // sent to the model — they are UI-only.
     const history: ChatMessage[] = get().messages
-      .filter((m) => m.status === 'complete' || m.role === 'user')
+      .filter((m) => m.role !== 'note' && (m.status === 'complete' || m.role === 'user'))
       .map((m) => ({
         role: m.role === 'assistant' ? ('assistant' as const) : ('user' as const),
         content: m.content,
@@ -240,7 +266,6 @@ export const useAgentStore = create<AgentSessionState>()((set, get) => {
       return { tool: c.tool, status: 'ok', result: c.feedbackFull ?? c.resultPreview ?? c.summary ?? 'done' };
     });
 
-    set({ phase: 'streaming' });
     const feedbackMessage: AgentMessage = {
       id: nextMessageId('user'),
       role: 'user',
@@ -249,15 +274,24 @@ export const useAgentStore = create<AgentSessionState>()((set, get) => {
       hidden: true,
       createdAt: Date.now(),
     };
-    set((s) => ({ messages: [...s.messages, feedbackMessage] }));
+    // BUGFIX: the approval-resumed turn counts against the safety cap too —
+    // otherwise an approving loop (model keeps proposing writes) is uncapped.
+    set((s) => ({
+      phase: 'streaming',
+      messages: [...s.messages, feedbackMessage],
+      turnCount: s.turnCount + 1,
+    }));
     await streamTurn();
   }
 
   /** One assistant turn: stream text, then handle tool calls. */
   async function streamTurn(): Promise<void> {
     const state = get();
-    if (state.turnCount >= MAX_ITERATIONS) {
-      appendNote(`Stopped after ${MAX_ITERATIONS} tool turns (safety limit). Ask Forge to continue if needed.`);
+    const cap = MAX_ITERATIONS[state.mode];
+    if (state.turnCount >= cap) {
+      appendNote(
+        `Stopped after ${cap} tool turns (safety limit for ${state.mode} mode). Ask Forge to continue if needed.`,
+      );
       set({ phase: 'idle' });
       return;
     }
@@ -326,6 +360,18 @@ export const useAgentStore = create<AgentSessionState>()((set, get) => {
       return;
     }
 
+    // Usage meter (masterprompt §8.3, estimate mode): count the prompt
+    // actually sent + the text produced. Labeled "est." in the UI.
+    const inTokens =
+      estimateTokens(system) + history.reduce((sum, m) => sum + estimateTokens(m.content), 0);
+    set((s) => ({
+      usage: {
+        inTokens: s.usage.inTokens + inTokens,
+        outTokens: s.usage.outTokens + estimateTokens(fullText),
+        modelCalls: s.usage.modelCalls + 1,
+      },
+    }));
+
     // Turn text complete — look for tool calls.
     const { calls, cleanText } = extractToolCalls(fullText);
     if (calls.length === 0) {
@@ -333,6 +379,13 @@ export const useAgentStore = create<AgentSessionState>()((set, get) => {
       set({ phase: 'idle' });
       return;
     }
+
+    const mode = get().mode;
+    const modeAllowsWrites = mode === 'agent' || mode === 'goal';
+    const modeBlockNote =
+      mode === 'ask'
+        ? 'BLOCKED BY MODE: Ask mode is read-only — write_file/edit_file are not available. Answer with text and fenced code labeled as a suggestion; do not claim anything was applied.'
+        : 'BLOCKED BY MODE: Plan mode does not modify files. Present the implementation plan as markdown in your reply instead.';
 
     const toolStates: ToolCallState[] = calls.map((call, i) => ({
       callId: `${assistantId}-tool-${i}`,
@@ -344,6 +397,7 @@ export const useAgentStore = create<AgentSessionState>()((set, get) => {
     patchMessage(assistantId, { content: cleanText, toolCalls: toolStates, status: 'complete' });
 
     // Execute: read-only instantly, write/edit → previews for approval.
+    // Ask/Plan modes reject write tools up front (masterprompt §9.2).
     const autoFeedback: ToolFeedback[] = [];
     let hasPendingWrites = false;
 
@@ -358,12 +412,33 @@ export const useAgentStore = create<AgentSessionState>()((set, get) => {
           resultPreview: result.feedback.slice(0, 1_500),
           feedbackFull: result.feedback,
         });
+        recordAudit({
+          tool: state.tool,
+          decision: result.ok ? 'auto-executed' : 'failed',
+          target: auditTarget(state.tool, state.args),
+          mode,
+          note: result.ok ? undefined : capAuditNote(result.error ?? result.summary),
+        });
         autoFeedback.push({
           tool: state.tool,
           status: result.ok ? 'ok' : 'error',
           result: result.ok ? result.feedback : undefined,
           error: result.ok ? undefined : (result.error ?? result.summary),
         });
+      } else if (!modeAllowsWrites) {
+        patchToolCall(assistantId, state.callId, {
+          status: 'failed',
+          summary: 'Blocked — read-only mode',
+          error: 'This mode does not allow file changes.',
+          feedbackFull: modeBlockNote,
+        });
+        recordAudit({
+          tool: state.tool,
+          decision: 'mode-blocked',
+          target: auditTarget(state.tool, state.args),
+          mode,
+        });
+        autoFeedback.push({ tool: state.tool, status: 'error', error: modeBlockNote });
       } else {
         const preview = await previewWriteCall(state.call);
         if ('ok' in preview) {
@@ -374,6 +449,13 @@ export const useAgentStore = create<AgentSessionState>()((set, get) => {
             error: preview.error,
             feedbackFull: preview.feedback,
           });
+          recordAudit({
+            tool: state.tool,
+            decision: 'failed',
+            target: auditTarget(state.tool, state.args),
+            mode,
+            note: capAuditNote(preview.error ?? preview.summary),
+          });
           autoFeedback.push({ tool: state.tool, status: 'error', error: preview.feedback });
         } else {
           patchToolCall(assistantId, state.callId, {
@@ -382,6 +464,12 @@ export const useAgentStore = create<AgentSessionState>()((set, get) => {
               preview.kind === 'new-file'
                 ? `New file: ${preview.path}`
                 : `${preview.path}: +${preview.diff?.added ?? 0} / −${preview.diff?.removed ?? 0}`,
+          });
+          recordAudit({
+            tool: state.tool,
+            decision: 'pending',
+            target: auditTarget(state.tool, state.args),
+            mode,
           });
           hasPendingWrites = true;
         }
@@ -421,6 +509,8 @@ export const useAgentStore = create<AgentSessionState>()((set, get) => {
     messages: [],
     phase: 'idle',
     turnCount: 0,
+    mode: 'agent',
+    usage: { inTokens: 0, outTokens: 0, modelCalls: 0 },
     activeProviderId: null,
     activeModel: null,
     modelPrefLoaded: false,
@@ -457,6 +547,14 @@ export const useAgentStore = create<AgentSessionState>()((set, get) => {
       } catch {
         // ignore corrupt pref
       }
+      try {
+        const raw = await AsyncStorage.getItem(MODE_KEY);
+        if (raw && (AGENT_MODES as readonly string[]).includes(raw)) {
+          set({ mode: raw as AgentMode });
+        }
+      } catch {
+        // ignore corrupt pref
+      }
       set({ modelPrefLoaded: true });
     },
 
@@ -467,9 +565,15 @@ export const useAgentStore = create<AgentSessionState>()((set, get) => {
       );
     },
 
+    setMode(mode) {
+      if (!(AGENT_MODES as readonly string[]).includes(mode)) return;
+      set({ mode });
+      void AsyncStorage.setItem(MODE_KEY, mode).catch(() => undefined);
+    },
+
     newChat() {
       cancelledRunId = runCounter; // stop any in-flight run
-      set({ messages: [], phase: 'idle', turnCount: 0 });
+      set({ messages: [], phase: 'idle', turnCount: 0, usage: { inTokens: 0, outTokens: 0, modelCalls: 0 } });
     },
 
     async sendMessage(text) {
@@ -500,8 +604,16 @@ export const useAgentStore = create<AgentSessionState>()((set, get) => {
       const state = get().messages.find((m) => m.id === messageId)?.toolCalls?.find((c) => c.callId === callId);
       if (!state || state.status !== 'pending-approval' || !state.preview) return;
 
+      const mode = get().mode;
       patchToolCall(messageId, callId, { status: 'running', summary: 'Applying…' });
       const result = await applyWriteCall(state.call, state.preview);
+      recordAudit({
+        tool: state.tool,
+        decision: result.ok ? 'approved' : 'failed',
+        target: auditTarget(state.tool, state.args),
+        mode,
+        note: result.ok ? undefined : capAuditNote(result.error ?? result.summary),
+      });
       patchToolCall(messageId, callId, {
         status: result.ok ? 'applied' : 'failed',
         summary: result.summary,
@@ -524,6 +636,12 @@ export const useAgentStore = create<AgentSessionState>()((set, get) => {
     rejectToolCall(messageId, callId) {
       const state = get().messages.find((m) => m.id === messageId)?.toolCalls?.find((c) => c.callId === callId);
       if (!state || state.status !== 'pending-approval') return;
+      recordAudit({
+        tool: state.tool,
+        decision: 'rejected',
+        target: auditTarget(state.tool, state.args),
+        mode: get().mode,
+      });
       patchToolCall(messageId, callId, {
         status: 'rejected',
         summary: 'Rejected by user',

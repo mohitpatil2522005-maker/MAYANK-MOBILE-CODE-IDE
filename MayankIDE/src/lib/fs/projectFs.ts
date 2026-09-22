@@ -15,6 +15,7 @@ import { Platform } from 'react-native';
 import {
   createDemoFile,
   createDemoProject,
+  isDemoRootActive,
   isDemoUri,
   readDemoFile,
   writeDemoFile,
@@ -193,7 +194,7 @@ export const projectFS: ProjectFS = {
     if (!rel) throw new Error('Empty file path');
     const name = rel.split('/').pop() ?? rel;
 
-    if (lastRootIsDemo()) return createDemoFile(rel, content);
+    if (lastRootIsDemo() || isDemoRootActive()) return createDemoFile(rel, content);
     const rootUri = lastRootUri();
     if (!rootUri) throw new Error('No project open');
 

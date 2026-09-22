@@ -9,6 +9,7 @@
 import {
   createDemoFile,
   createDemoProject,
+  isDemoRootActive,
   isDemoUri,
   readDemoFile,
   writeDemoFile,
@@ -157,7 +158,7 @@ export const projectFS: ProjectFS = {
   async createFile(relativePath: string, content: string): Promise<FileNode> {
     const rel = relativePath.replace(/^\/+/, '');
     if (!rel) throw new Error('Empty file path');
-    if (lastRootIsDemoWeb()) return createDemoFile(rel, content);
+    if (isDemoRootActive() || lastRootIsDemoWeb()) return createDemoFile(rel, content);
     if (!rootHandle) throw new Error('No project open');
     const segments = rel.split('/');
     const fileName = segments.pop() ?? rel;

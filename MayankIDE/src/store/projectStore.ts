@@ -7,7 +7,7 @@ import { Alert, Platform } from 'react-native';
 import { create } from 'zustand';
 
 import { languageFromFilename, type LanguageId } from '@/src/lib/editor/languages';
-import { createDemoProject } from '@/src/lib/fs/demoProject';
+import { createDemoProject, setDemoRootActive } from '@/src/lib/fs/demoProject';
 import { projectFS } from '@/src/lib/fs/projectFs';
 import type { FileNode } from '@/src/lib/fs/types';
 import { useSettingsStore } from '@/src/store/settingsStore';
@@ -118,6 +118,8 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
         set({ isOpeningProject: false });
         return;
       }
+      // Keep the demo flag in sync so the FS layers route to the right root.
+      setDemoRootActive(picked.rootUri === 'demo://');
       set({
         projectName: picked.name,
         rootUri: picked.rootUri,
@@ -137,6 +139,7 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
 
   openDemoProject() {
     const demo = createDemoProject();
+    setDemoRootActive(true);
     set({
       projectName: demo.name,
       rootUri: demo.rootUri,
@@ -155,6 +158,7 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
     set({ isOpeningProject: true });
     const restored = await projectFS.restoreProject(lastUri);
     if (restored) {
+      setDemoRootActive(restored.rootUri === 'demo://');
       set({
         projectName: restored.name,
         rootUri: restored.rootUri,
@@ -175,6 +179,7 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
     if (dirty && !(await confirmDiscardChanges(dirty.name))) return;
     autoSaveTimers.forEach((t) => clearTimeout(t));
     autoSaveTimers.clear();
+    setDemoRootActive(false);
     set({
       projectName: null,
       rootUri: null,

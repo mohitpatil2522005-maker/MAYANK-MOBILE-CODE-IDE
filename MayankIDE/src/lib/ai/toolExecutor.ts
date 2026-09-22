@@ -105,7 +105,9 @@ export async function executeReadOnlyTool(call: ParsedToolCall): Promise<ToolExe
           error: 'file-not-found',
         };
       }
-      const content = await projectFS.readFile(node.uri);
+      // Open editor tab (with unsaved edits) wins over disk, so the agent
+      // sees exactly what the user sees — same rule as search/write preview.
+      const content = await currentFileText(node);
       return {
         ok: true,
         summary: `Read ${node.path} (${content.length} chars)`,

@@ -8,7 +8,9 @@ A mobile app (iOS + Android) code editor with a built-in AI coding agent. Users 
 |------|---------|
 | [`PRD.md`](./PRD.md) | Product requirements: features, user stories, architecture, security, roadmap |
 | [`agent.md`](./agent.md) | Behavior spec for the in-app AI agent: tools, safety boundaries, protocols |
-| [`master_prompt.md`](./master_prompt.md) | Step-by-step build plan (Phases 1–6) for AI-assisted development |
+| [`masterprompt.md`](./masterprompt.md) | v2 spec (M0–M12): product + architecture + working agreement for AI-assisted development |
+| [`docs/gap-analysis.md`](./docs/gap-analysis.md) | Current build vs the v2 spec — what's done, what's missing, priority plan |
+| [`docs/status.md`](./docs/status.md) | Progress ledger (newest slice first) |
 
 ## 📱 The app
 
@@ -22,7 +24,7 @@ npx expo run:android      # native Android
 npx expo run:ios          # native iOS (macOS)
 npm run web               # browser preview
 npm run typecheck         # tsc --noEmit (strict)
-npm test                  # 7 logic suites · 184 checks (SSE, tools, providers, export, settings, fuzzy, themes)
+npm test                  # 8 suites · 232 checks (SSE, tools, providers, export, settings, fuzzy, themes, golden session)
 ```
 
 CI runs the same typecheck + test commands on every push/PR:
@@ -38,6 +40,7 @@ CI runs the same typecheck + test commands on every push/PR:
 | 4 | Provider management UI: add/edit/test/delete/default, keychain key entry, model fetch, custom endpoints | ✅ Done (core) |
 | 5 | Editor ↔ agent bridge (Send to Agent, file links in chat, reveal applied edits), Retry on errors, key-missing guidance, session tokens, transport-level tests | ✅ Done |
 | 6 | EAS build config (`eas.json`, bundle IDs), privacy policy, store assets | 🔶 Config done (builds not run here) |
+| 7 (v2 spec) | Agent modes Ask/Plan/Agent/Goal with read-only enforcement + per-mode step caps, session usage meter, agent activity audit log (Settings), golden-session test suite, safety-cap + buffer/FS bug fixes | ✅ Done (see `docs/gap-analysis.md` for the full M0–M12 status) |
 
 ### Hardening ✚
 
@@ -91,10 +94,24 @@ CI runs the same typecheck + test commands on every push/PR:
   summaries with applied/rejected/failed outcomes) to the clipboard.
 - **Copyable code fences** — every fenced block in the assistant stream renders
   with a language label + one-tap Copy button (and selectable text).
+- **Agent modes (v2 spec §9.2)** — Ask / Plan / Agent / Goal chips in the Agent
+  tab: Ask/Plan are hard-enforced read-only (write/edit calls are rejected and
+  fed back to the model), each mode has its own step cap, and the active mode
+  is stated in the system prompt. Preference persists.
+- **Session usage meter (v2 spec §8.3)** — the chat status strip shows model
+  calls + estimated in/out tokens for the session (`est.`, local estimate).
+- **Agent activity log (v2 spec §9.3b)** — every tool decision (auto-run,
+  pending, approved, rejected, failed, mode-blocked) is recorded with tool,
+  target and mode; view/copy/clear under **Settings → Agent activity**. No file
+  contents or secrets are stored.
+- **Golden-session tests (v2 spec §13.5)** — `tests/golden.test.ts` runs
+  scripted agent sessions (read → approve → apply, reject, error + retry,
+  mode enforcement, safety caps) through the *real* app code against a fake
+  provider; built with esbuild + Node-safe stubs (`tests/golden/build.cjs`).
 - **In-repo test suites** — `tests/*.test.ts` covers SSE parsing for all
   provider families, auth/error key-leak sanitization, tool extraction + apply
-  logic, settings schema/search/coercion, and session export; run with
-  `npm test`.
+  logic, streaming text masking, settings schema/search/coercion, session
+  export, and the golden agent session; run with `npm test`.
 
 ### Native builds (Phase 6)
 
@@ -118,6 +135,8 @@ privacy policy in `MayankIDE/PRIVACY.md`.
 - [ ] Agent reads file (tool card shows content)
 - [ ] Agent proposes edit → diff shown → **Approve** → file changed + editor reveals changed line
 - [ ] Agent proposes edit → **Reject** → file untouched, agent adapts
+- [ ] Mode chips: switch to **Ask** → agent can read/explain but file changes are refused; switch back to **Agent** → edits proposed again
+- [ ] Settings → **Agent activity** lists the decisions from the chat above; Copy log + Clear work
 - [ ] Chat survives app kill/relaunch (tool cards show restored state)
 - [ ] Header share button → paste elsewhere → session markdown complete
 - [ ] Copy button on a code fence → clipboard matches

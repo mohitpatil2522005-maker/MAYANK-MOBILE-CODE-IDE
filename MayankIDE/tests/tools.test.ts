@@ -55,6 +55,24 @@ t.section('stripStreamingToolText');
   t.check('no tool text unchanged', stripStreamingToolText('Hello world'), 'Hello world');
   t.check('trailing fence hidden', stripStreamingToolText('Explaining…\n```tool\n{"tool"'), 'Explaining…');
   t.check('trailing legacy hidden', stripStreamingToolText('Ok\n🔧 TOOL_CALL'), 'Ok');
+  // Regression: a CLOSED json fence (ordinary example) stays visible, and
+  // prose after a completed tool block is not swallowed mid-stream.
+  t.check(
+    'closed json fence stays visible',
+    stripStreamingToolText('Here is an example:\n```json\n{"a":1}\n```\nDone!'),
+    'Here is an example:\n```json\n{"a":1}\n```\nDone!',
+  );
+  t.check(
+    'prose after completed tool block kept',
+    stripStreamingToolText('Step 1:\n```tool\n{"tool":"read_file","path":"a.ts"}\n```\nNow step 2…'),
+    'Step 1:\n```tool\n{"tool":"read_file","path":"a.ts"}\n```\nNow step 2…',
+  );
+  t.check(
+    'only the unclosed trailing block is hidden',
+    stripStreamingToolText('Done:\n```tool\n{"ok":1}\n```\nMore:\n```tool\n{"pa'),
+    'Done:\n```tool\n{"ok":1}\n```\nMore:',
+  );
+  t.check('json5 fence is not a tool fence', stripStreamingToolText('x\n```json5\n{a:1}\n```\ny'), 'x\n```json5\n{a:1}\n```\ny');
 }
 
 t.section('diff');

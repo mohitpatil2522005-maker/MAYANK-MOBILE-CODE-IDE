@@ -5,7 +5,8 @@
  * Provider management, project actions and About live below the schema list.
  */
 import { Ionicons } from '@expo/vector-icons';
-import React, { useMemo, useState } from 'react';
+import * as Clipboard from 'expo-clipboard';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   Modal,
   Pressable,
@@ -20,6 +21,14 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { usePalette, type Palette } from '@/src/constants/theme';
 import { ProviderList } from '@/src/components/settings/ProviderList';
+import {
+  auditToText,
+  clearAudit,
+  getAudit,
+  loadAudit,
+  useAgentAuditSubscribe,
+  type AuditEntry,
+} from '@/src/lib/ai/audit';
 import {
   filterSettings,
   SETTING_DEFS,
@@ -122,6 +131,9 @@ export default function SettingsScreen() {
             <ProviderList palette={palette} />
           </Section>
         )}
+
+        {/* Agent activity — audit trail of every tool decision (§9.3b) */}
+        {!searching && <AgentActivitySection palette={palette} />}
 
         {/* Project */}
         {!searching && projectName && (
@@ -393,6 +405,122 @@ function EnumPickerModal({
   );
 }
 
+/* ─── Agent activity (audit log) ─────────────────────────────── */
+
+const DECISION_COLORS: Record<
+  AuditEntry['decision'],
+  'success' | 'danger' | 'warning' | 'tint' | 'textSecondary'
+> = {
+  'auto-executed': 'textSecondary',
+  pending: 'warning',
+  approved: 'success',
+  rejected: 'textSecondary',
+  failed: 'danger',
+  'mode-blocked': 'warning',
+};
+
+function AgentActivitySection({ palette }: { palette: Palette }) {
+  const [entries, setEntries] = useState<AuditEntry[]>([]);
+  const [copiedAt, setCopiedAt] = useState<number | null>(null);
+
+  useEffect(() => {
+    void loadAudit().then(setEntries);
+    const unsub = useAgentAuditSubscribe(() => setEntries(getAudit()));
+    return unsub;
+  }, []);
+
+  const copy = async () => {
+    await Clipboard.setStringAsync(auditToText(entries)).catch(() => undefined);
+    setCopiedAt(Date.now());
+    setTimeout(() => setCopiedAt(null), 2000);
+  };
+  const clear = async () => {
+    await clearAudit();
+    setEntries([]);
+  };
+
+  const recent = [...entries].reverse().slice(0, 30);
+
+  return (
+    <Section palette={palette} title="Agent activity">
+      <Text style={[styles.auditHint, { color: palette.textSecondary }]}>
+        Every tool decision Forge makes — auto-runs, approvals, rejections, denials. No file
+        contents or secrets are stored.
+      </Text>
+      {recent.length === 0 ? (
+        <Text style={[styles.auditEmpty, { color: palette.textSecondary }]}>
+          No agent activity yet.
+        </Text>
+      ) : (
+        <View style={styles.auditList}>
+          {recent.map((e, i) => {
+            const color = palette[DECISION_COLORS[e.decision]];
+            return (
+              <View key={`${e.ts}-${i}`} style={styles.auditRow}>
+                <Text
+                  style={[styles.auditDecision, { color }]}
+                  accessibilityLabel={e.decision}
+                >
+                  {e.decision}
+                </Text>
+                <Text
+                  numberOfLines={1}
+                  style={[styles.auditTool, { color: palette.text }]}
+                >
+                  {e.tool}
+                </Text>
+                <Text
+                  numberOfLines={1}
+                  style={[styles.auditTarget, { color: palette.textSecondary }]}
+                >
+                  {e.target}
+                </Text>
+                <Text style={[styles.auditMode, { color: palette.textSecondary }]}>
+                  {e.mode}
+                </Text>
+              </View>
+            );
+          })}
+        </View>
+      )}
+      <View style={styles.auditActions}>
+        <Pressable
+          onPress={() => void copy()}
+          disabled={recent.length === 0}
+          style={({ pressed }) => [
+            styles.auditButton,
+            { borderColor: palette.border },
+            (pressed || recent.length === 0) && { opacity: 0.5 },
+          ]}
+          accessibilityRole="button"
+        >
+          <Ionicons
+            name={copiedAt ? 'checkmark' : 'copy-outline'}
+            size={15}
+            color={copiedAt ? palette.success : palette.text}
+          />
+          <Text style={[styles.auditButtonText, { color: palette.text }]}>
+            {copiedAt ? 'Copied' : 'Copy log'}
+          </Text>
+        </Pressable>
+        <Pressable
+          onPress={() => void clear()}
+          disabled={recent.length === 0}
+          style={({ pressed }) => [
+            styles.auditButton,
+            { borderColor: palette.danger },
+            (pressed || recent.length === 0) && { opacity: 0.5 },
+          ]}
+          accessibilityRole="button"
+        >
+          <Ionicons name="trash-outline" size={15} color={palette.danger} />
+          <Text style={[styles.auditButtonText, { color: palette.danger }]}>Clear</Text>
+        </Pressable>
+      </View>
+    </Section>
+  );
+}
+
 /* ─── Generic section card (providers / project / about) ─────── */
 
 function Section({
@@ -509,4 +637,28 @@ const styles = StyleSheet.create({
   },
   dangerButtonText: { fontSize: 13.5, fontWeight: '600' },
   aboutText: { fontSize: 12.5, lineHeight: 19 },
+  auditHint: { fontSize: 12, lineHeight: 17 },
+  auditEmpty: { fontSize: 12.5, fontStyle: 'italic' },
+  auditList: { gap: 6 },
+  auditRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  auditDecision: {
+    fontSize: 10.5,
+    fontWeight: '700',
+    width: 92,
+    textTransform: 'lowercase',
+  },
+  auditTool: { fontSize: 12, fontFamily: 'monospace' as never, flexShrink: 1 },
+  auditTarget: { fontSize: 11.5, flexShrink: 2, flex: 1 },
+  auditMode: { fontSize: 10.5, opacity: 0.7 },
+  auditActions: { flexDirection: 'row', gap: 10, marginTop: 4 },
+  auditButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    borderWidth: 1,
+    borderRadius: 8,
+    paddingVertical: 7,
+    paddingHorizontal: 12,
+  },
+  auditButtonText: { fontSize: 12.5, fontWeight: '600' },
 });
