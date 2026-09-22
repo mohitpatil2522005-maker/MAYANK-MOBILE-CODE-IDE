@@ -40,8 +40,8 @@ import { getApiKey } from '@/src/lib/storage/keychain';
 import { useProjectStore } from '@/src/store/projectStore';
 
 const MAX_ITERATIONS = 6;
-const MODEL_PREF_KEY = 'codeforge/agentModel/v1';
-const SESSION_KEY = 'codeforge/agentSession/v1';
+const MODEL_PREF_KEY = 'mayank-ide/agentModel/v1';
+const SESSION_KEY = 'mayank-ide/agentSession/v1';
 const SESSION_MAX_MESSAGES = 80;
 
 export type ToolCallStatus =

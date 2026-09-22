@@ -9,7 +9,7 @@ import { create } from 'zustand';
 import { deleteApiKey } from '@/src/lib/storage/keychain';
 import type { AIModel, AIProviderConfig, ProviderType } from './types';
 
-const REGISTRY_KEY = 'codeforge/providers/v1';
+const REGISTRY_KEY = 'mayank-ide/providers/v1';
 
 export interface NewProviderInput {
   name: string;

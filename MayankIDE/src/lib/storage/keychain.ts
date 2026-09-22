@@ -11,7 +11,7 @@
  */
 import { Platform } from 'react-native';
 
-const SERVICE_PREFIX = 'codeforge.provider.';
+const SERVICE_PREFIX = 'mayank-ide.provider.';
 const webMemory = new Map<string, string>();
 
 interface KeychainModule {

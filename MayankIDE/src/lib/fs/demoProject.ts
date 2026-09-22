@@ -11,7 +11,7 @@ export const DEMO_PROJECT_NAME = 'demo-project';
 const DEMO_FILES: Record<string, string> = {
   'README.md': `# Demo Project
 
-Welcome to **CodeForge Mobile**! 🎉
+Welcome to **Mayank IDE**! 🎉
 
 This in-memory project lets you try the editor without granting folder access.
 
@@ -40,7 +40,7 @@ export const VERSION = '0.1.0-phase1';
 `,
   'src/greeter.ts': `/** Returns a friendly greeting. */
 export function greet(name: string): string {
-  return \`Hello, \${name}! Welcome to CodeForge Mobile.\`;
+  return \`Hello, \${name}! Welcome to Mayank IDE.\`;
 }
 `,
   'scripts/hello.py': `"""Tiny Python sample to show syntax highlighting."""

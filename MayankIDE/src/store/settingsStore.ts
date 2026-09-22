@@ -91,7 +91,7 @@ export const useSettingsStore = create<SettingsState>()(
       setAutoSave: (autoSave) => set({ autoSave }),
     }),
     {
-      name: 'codeforge/settings/v1',
+      name: 'mayank-ide/settings/v1',
       storage: createJSONStorage(() => AsyncStorage),
       // Backfill newly added keys with schema defaults on rehydrate.
       merge: (persisted, current) => {

@@ -1,5 +1,5 @@
 /**
- * Editor screen — the heart of CodeForge Mobile (Phase 1).
+ * Editor screen — the heart of Mayank IDE (Phase 1).
  * File tree + tabs + CodeMirror editor with save / auto-save.
  */
 import { Ionicons } from '@expo/vector-icons';
@@ -335,7 +335,7 @@ export default function EditorScreen() {
         </Pressable>
         <View style={styles.headerCenter}>
           <Text numberOfLines={1} style={[styles.headerTitle, { color: palette.text }]}>
-            {activeFile ? activeFile.path : projectName ?? 'CodeForge Mobile'}
+            {activeFile ? activeFile.path : projectName ?? 'Mayank IDE'}
           </Text>
           {activeFile && (
             <Text style={[styles.headerSubtitle, { color: palette.textSecondary }]}>
@@ -465,7 +465,7 @@ export default function EditorScreen() {
           {!projectName && (
             <EmptyState palette={palette}>
               <Ionicons name="code-slash" size={44} color={palette.tint} />
-              <Text style={[styles.emptyTitle, { color: palette.text }]}>CodeForge Mobile</Text>
+              <Text style={[styles.emptyTitle, { color: palette.text }]}>Mayank IDE</Text>
               <Text style={[styles.emptyText, { color: palette.textSecondary }]}>
                 Open a folder from your device to start coding.
                 {Platform.OS === 'web'

@@ -38,7 +38,7 @@ export const useExtensionStore = create<ExtensionState>()(
             id && !s.installedIds.includes(id) ? [...s.installedIds, id] : s.installedIds,
         })),
     }),
-    { name: 'codeforge/extensions/v1', storage: createJSONStorage(() => AsyncStorage) },
+    { name: 'mayank-ide/extensions/v1', storage: createJSONStorage(() => AsyncStorage) },
   ),
 );
 

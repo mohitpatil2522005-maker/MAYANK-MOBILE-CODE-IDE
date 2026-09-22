@@ -38,14 +38,14 @@ t.section('structure');
     [msg({ role: 'user', content: 'hi' }), msg({ role: 'assistant', content: 'hello' })],
     META,
   );
-  t.check('starts with title', md.startsWith('# CodeForge Mobile — Forge session'), true);
+  t.check('starts with title', md.startsWith('# Mayank IDE — Forge session'), true);
   t.check('model meta line', md.includes('- **Model:** OpenAI · gpt-4.1'), true);
   t.check('project meta line', md.includes('- **Project:** demo-app'), true);
   t.check('exported timestamp', /- \*\*Exported:\*\* \d{4}-\d{2}-\d{2}T/.test(md), true);
   t.check('user heading', md.includes('### 🧑 You'), true);
   t.check('assistant heading', md.includes('### ✨ Forge'), true);
   t.check('bodies present', md.includes('hi') && md.includes('hello'), true);
-  t.check('footer', md.includes('_Exported from CodeForge Mobile._'), true);
+  t.check('footer', md.includes('_Exported from Mayank IDE._'), true);
 }
 
 t.section('filtering & markers');

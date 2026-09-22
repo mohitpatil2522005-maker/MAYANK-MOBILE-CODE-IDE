@@ -12,7 +12,7 @@ import { projectFS } from '@/src/lib/fs/projectFs';
 import type { FileNode } from '@/src/lib/fs/types';
 import { useSettingsStore } from '@/src/store/settingsStore';
 
-const LAST_PROJECT_KEY = 'codeforge/lastProjectUri/v1';
+const LAST_PROJECT_KEY = 'mayank-ide/lastProjectUri/v1';
 
 export interface OpenFile {
   uri: string;

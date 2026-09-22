@@ -1,21 +1,21 @@
 {
   "expo": {
-    "name": "CodeForge Mobile",
-    "slug": "CodeForgeMobile",
+    "name": "Mayank IDE",
+    "slug": "mayank-ide",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "codeforgemobile",
+    "scheme": "mayankide",
     "userInterfaceStyle": "automatic",
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.mayank.codeforgemobile",
+      "bundleIdentifier": "com.mayank.ide",
       "infoPlist": {
-        "NSFaceIDUsageDescription": "CodeForge Mobile uses Face ID to protect your API keys (optional biometric app lock)."
+        "NSFaceIDUsageDescription": "Mayank IDE uses Face ID to protect your API keys (optional biometric app lock)."
       }
     },
     "android": {
-      "package": "com.mayank.codeforgemobile",
+      "package": "com.mayank.ide",
       "edgeToEdgeEnabled": true,
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",

@@ -64,7 +64,7 @@ export function capContent(content: string, cap = CURRENT_FILE_CHAR_CAP): string
 /** System prompt for the agent (agent.md §5 template + tool protocol). */
 export function buildSystemPrompt(ctx: AgentContext): string {
   const parts: string[] = [
-    `You are Forge, an AI coding assistant inside CodeForge Mobile.
+    `You are Forge, an AI coding assistant inside Mayank IDE.
 You help the user write, understand, and improve code. Be concise and helpful; use markdown (headers, lists, fenced code blocks with a language tag).`,
     `## Current context`,
     `• Project: ${ctx.projectName} (${ctx.fileCount} files)`,

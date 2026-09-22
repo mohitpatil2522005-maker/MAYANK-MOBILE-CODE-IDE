@@ -88,7 +88,7 @@ t.section('catalog integrity');
   );
   t.check('null id → default', getThemeSpec(null), null);
   t.check('unknown id → default', getThemeSpec('nope'), null);
-  const dracula = getThemeSpec('codeforge.theme-dracula');
+  const dracula = getThemeSpec('mayank-ide.theme-dracula');
   t.check('dracula dark', dracula?.dark, true);
   t.check('dracula bg', dracula?.colors.background, '#282a36');
   t.check(
@@ -96,7 +96,7 @@ t.section('catalog integrity');
     dracula?.syntax.some((r) => r.scope.includes('keyword')),
     true,
   );
-  const gh = getThemeSpec('codeforge.theme-github-light');
+  const gh = getThemeSpec('mayank-ide.theme-github-light');
   t.check('github light type', gh?.dark, false);
 }
 

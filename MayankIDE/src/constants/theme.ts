@@ -1,5 +1,5 @@
 /**
- * CodeForge Mobile — design tokens.
+ * Mayank IDE — design tokens.
  * Dark palette is tuned to match the CodeMirror "oneDark" editor theme so the
  * editor chrome blends into the surrounding UI.
  */

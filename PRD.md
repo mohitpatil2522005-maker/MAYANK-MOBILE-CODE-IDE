@@ -1,8 +1,8 @@
-# PRD: CodeForge Mobile — AI-Native Mobile Code Editor & Coding Agent
+# PRD: Mayank IDE — AI-Native Mobile Code Editor & Coding Agent
 
 ## 1. Overview
 
-**Product Name:** CodeForge Mobile (working title)
+**Product Name:** Mayank IDE (working title)
 **Type:** Mobile Application (iOS & Android)
 **Category:** Developer Tools / Code Editor / AI Assistant
 **Version:** 0.1.0 (MVP)
@@ -118,7 +118,7 @@ Mobile developers and on-the-go programmers lack a true code editor with deep AI
 ### 5.2 Directory Structure (Example — React Native)
 
 ```
-codeforge-mobile/
+mayank-ide/
 ├── app/                    # Screens (Expo Router)
 │   ├── (tabs)/
 │   │   ├── editor/         # Main editor screen

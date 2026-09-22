@@ -1,4 +1,4 @@
-# MAYANK-MOBILE-CODE-IDE — CodeForge Mobile
+# MAYANK-MOBILE-CODE-IDE — Mayank IDE
 
 A mobile app (iOS + Android) code editor with a built-in AI coding agent. Users add their own API keys (OpenAI, Google, Anthropic, Groq, …) and can register **custom endpoints** for any other provider (Ollama, LM Studio, vLLM, etc.). Keys are stored in the OS keychain and are only ever sent to the provider you configured.
 
@@ -12,10 +12,10 @@ A mobile app (iOS + Android) code editor with a built-in AI coding agent. Users 
 
 ## 📱 The app
 
-Lives in [`CodeForgeMobile/`](./CodeForgeMobile) — React Native + Expo (SDK 57), Expo Router, CodeMirror 6, Zustand.
+Lives in [`MayankIDE/`](./MayankIDE) — React Native + Expo (SDK 57), Expo Router, CodeMirror 6, Zustand.
 
 ```bash
-cd CodeForgeMobile
+cd MayankIDE
 npm install
 npx expo start            # dev server (Expo Go / dev build)
 npx expo run:android      # native Android
@@ -99,7 +99,7 @@ CI runs the same typecheck + test commands on every push/PR:
 ### Native builds (Phase 6)
 
 ```bash
-cd CodeForgeMobile
+cd MayankIDE
 # Dev client with react-native-keychain support (required — Expo Go can't run keychain):
 npx eas build --profile development --platform android
 npx eas build --profile development --platform ios
@@ -108,7 +108,7 @@ npx eas build --profile preview --platform android
 ```
 
 Requires an Expo/EAS account (`npx eas login`). Config lives in `eas.json`;
-privacy policy in `CodeForgeMobile/PRIVACY.md`.
+privacy policy in `MayankIDE/PRIVACY.md`.
 
 ### Manual E2E checklist (device)
 

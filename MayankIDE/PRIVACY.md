@@ -1,8 +1,8 @@
-# Privacy Policy — CodeForge Mobile
+# Privacy Policy — Mayank IDE
 
 _Last updated: 2026-09-21_
 
-CodeForge Mobile is a **local-first** developer tool. This document describes exactly
+Mayank IDE is a **local-first** developer tool. This document describes exactly
 what the app does with your data. It exists because app stores require a privacy
 policy; it is short because the app genuinely collects almost nothing.
 
@@ -39,7 +39,7 @@ Only use this on trusted networks.
 ## Third-party services
 
 Your use of an AI provider is governed by that provider's own privacy policy; review
-it for details on how they handle API data. CodeForge Mobile does not control, and is
+it for details on how they handle API data. Mayank IDE does not control, and is
 not responsible for, those services.
 
 ## Changes

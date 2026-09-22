@@ -23,7 +23,7 @@ const TOOL_STATUS_LABEL: Record<string, string> = {
 export function sessionToMarkdown(messages: AgentMessage[], meta: SessionMeta): string {
   const when = (meta.exportedAt ?? new Date()).toISOString();
   const lines: string[] = [
-    '# CodeForge Mobile — Forge session',
+    '# Mayank IDE — Forge session',
     '',
     `- **Model:** ${meta.target}`,
     `- **Project:** ${meta.project ?? 'none'}`,
@@ -56,6 +56,6 @@ export function sessionToMarkdown(messages: AgentMessage[], meta: SessionMeta): 
     if (message.toolCalls?.length) lines.push('');
   }
 
-  lines.push('---', '', '_Exported from CodeForge Mobile._', '');
+  lines.push('---', '', '_Exported from Mayank IDE._', '');
   return lines.join('\n');
 }

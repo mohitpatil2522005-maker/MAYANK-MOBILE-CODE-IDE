@@ -213,9 +213,9 @@ const TC = (
 
 export const BUNDLED_THEMES: ThemeExtension[] = [
   {
-    id: 'codeforge.theme-dracula',
+    id: 'mayank-ide.theme-dracula',
     name: 'Dracula',
-    publisher: 'codeforge',
+    publisher: 'mayank-ide',
     version: '1.0.0',
     description: 'The famous dark theme — purple keywords, cyan functions.',
     swatches: ['#282a36', '#ff79c6', '#50fa7b'],
@@ -251,9 +251,9 @@ export const BUNDLED_THEMES: ThemeExtension[] = [
     },
   },
   {
-    id: 'codeforge.theme-monokai',
+    id: 'mayank-ide.theme-monokai',
     name: 'Monokai',
-    publisher: 'codeforge',
+    publisher: 'mayank-ide',
     version: '1.0.0',
     description: 'The Sublime Text classic — pink keywords, yellow strings.',
     swatches: ['#272822', '#f92672', '#a6e22e'],
@@ -288,9 +288,9 @@ export const BUNDLED_THEMES: ThemeExtension[] = [
     },
   },
   {
-    id: 'codeforge.theme-github-light',
+    id: 'mayank-ide.theme-github-light',
     name: 'GitHub Light',
-    publisher: 'codeforge',
+    publisher: 'mayank-ide',
     version: '1.0.0',
     description: 'Clean, bright, paper-like — the GitHub default look.',
     swatches: ['#ffffff', '#cf222e', '#0550ae'],
@@ -323,9 +323,9 @@ export const BUNDLED_THEMES: ThemeExtension[] = [
     },
   },
   {
-    id: 'codeforge.theme-tokyo-night',
+    id: 'mayank-ide.theme-tokyo-night',
     name: 'Tokyo Night',
-    publisher: 'codeforge',
+    publisher: 'mayank-ide',
     version: '1.0.0',
     description: 'A deep, neon-tinted night over the city skyline.',
     swatches: ['#1a1b26', '#bb9af7', '#7aa2f7'],

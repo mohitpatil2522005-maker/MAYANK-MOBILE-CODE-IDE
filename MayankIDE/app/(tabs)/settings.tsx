@@ -147,7 +147,7 @@ export default function SettingsScreen() {
         {!searching && (
           <Section palette={palette} title="About">
             <Text style={[styles.aboutText, { color: palette.textSecondary }]}>
-              CodeForge Mobile — editor + Forge agent + providers.{'\n'}
+              Mayank IDE — editor + Forge agent + providers.{'\n'}
               Settings are stored on-device; API keys live in your OS keychain.
             </Text>
           </Section>
