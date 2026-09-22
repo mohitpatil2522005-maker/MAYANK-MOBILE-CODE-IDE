@@ -12,6 +12,7 @@ import WebViewBase, {
 
 import type { LanguageId } from '@/src/lib/editor/languages';
 import { DEFAULT_EDITOR_OPTIONS, type EditorOptions } from '@/src/lib/editor/editorOptions';
+import type { EditorThemeSpec } from '@/src/lib/extensions/themes';
 import { buildEditorHtml } from './codemirrorHtml';
 
 /** Instance methods used from the WebView ref (typed loosely in the lib). */
@@ -34,6 +35,8 @@ export interface CodeEditorProps {
   vim: boolean;
   /** Feature switches from the settings schema (tab size, wrap, gutters…). */
   options?: EditorOptions;
+  /** Extension theme override (Phase 2); null/undefined → built-in theme. */
+  themeSpec?: EditorThemeSpec | null;
   editable?: boolean;
   onChange: (value: string) => void;
   onSaveShortcut?: () => void;
@@ -49,6 +52,7 @@ type OutboundMessage =
   | { type: 'setValue'; value: string }
   | { type: 'setLanguage'; lang: LanguageId }
   | { type: 'setTheme'; dark: boolean }
+  | { type: 'setThemeSpec'; spec: EditorThemeSpec | null }
   | { type: 'setFontSize'; px: number }
   | { type: 'setVim'; enabled: boolean }
   | { type: 'setOptions'; options: EditorOptions }
@@ -71,6 +75,7 @@ export default function CodeEditor({
   fontSize,
   vim,
   options,
+  themeSpec = null,
   onChange,
   onSaveShortcut,
   onSelectionChange,
@@ -86,8 +91,8 @@ export default function CodeEditor({
     () => ({ ...DEFAULT_EDITOR_OPTIONS, ...(options ?? {}) }),
     [options],
   );
-  const latest = useRef({ language, dark, fontSize, vim, options: editorOptions });
-  latest.current = { language, dark, fontSize, vim, options: editorOptions };
+  const latest = useRef({ language, dark, fontSize, vim, options: editorOptions, themeSpec });
+  latest.current = { language, dark, fontSize, vim, options: editorOptions, themeSpec };
   const callbacks = useRef({ onChange, onSaveShortcut, onSelectionChange, onCursorChange });
   callbacks.current = { onChange, onSaveShortcut, onSelectionChange, onCursorChange };
 
@@ -113,6 +118,7 @@ export default function CodeEditor({
   useEffect(() => post({ type: 'setFontSize', px: fontSize }), [fontSize]);
   useEffect(() => post({ type: 'setVim', enabled: vim }), [vim]);
   useEffect(() => post({ type: 'setOptions', options: editorOptions }), [editorOptions]);
+  useEffect(() => post({ type: 'setThemeSpec', spec: themeSpec }), [themeSpec]);
   useEffect(() => {
     if (revealLine) post({ type: 'revealLine', line: revealLine });
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -127,12 +133,14 @@ export default function CodeEditor({
     }
     if (msg.type === 'ready') {
       ready.current = true;
-      const { language: l, dark: d, fontSize: fs, vim: v, options: o } = latest.current;
+      const { language: l, dark: d, fontSize: fs, vim: v, options: o, themeSpec: ts } =
+        latest.current;
       post({ type: 'setTheme', dark: d });
       post({ type: 'setFontSize', px: fs });
       post({ type: 'setLanguage', lang: l });
       post({ type: 'setVim', enabled: v });
       post({ type: 'setOptions', options: o });
+      post({ type: 'setThemeSpec', spec: ts });
       post({ type: 'setValue', value: lastKeystrokeValue.current });
       queue.current.forEach((raw) => webRef.current?.postMessage(raw));
       queue.current = [];

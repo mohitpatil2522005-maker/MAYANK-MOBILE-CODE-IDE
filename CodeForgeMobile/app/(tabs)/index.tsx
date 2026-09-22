@@ -7,13 +7,16 @@ import { router } from 'expo-router';
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   Platform,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   useWindowDimensions,
   View,
 } from 'react-native';
+import Markdown from 'react-native-markdown-display';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import CodeEditor from '@/src/components/editor/CodeEditor';
@@ -23,8 +26,10 @@ import { FileTree } from '@/src/components/editor/FileTree';
 import { usePalette, type Palette } from '@/src/constants/theme';
 import { DEFAULT_EDITOR_OPTIONS } from '@/src/lib/editor/editorOptions';
 import { LANGUAGE_LABELS } from '@/src/lib/editor/languages';
+import { getThemeSpec } from '@/src/lib/extensions/themes';
 import { notifySuccess, tapLight, tapMedium } from '@/src/lib/haptics';
 import { agentTargetLabel, useAgentStore } from '@/src/store/agentStore';
+import { useExtensionStore } from '@/src/store/extensionStore';
 import { allProjectFiles, isDirty, useProjectStore } from '@/src/store/projectStore';
 import { useSettingsStore } from '@/src/store/settingsStore';
 
@@ -46,6 +51,7 @@ export default function EditorScreen() {
   const openFile = useProjectStore((s) => s.openFile);
   const activateFile = useProjectStore((s) => s.activateFile);
   const closeFile = useProjectStore((s) => s.closeFile);
+  const moveTab = useProjectStore((s) => s.moveTab);
   const updateContent = useProjectStore((s) => s.updateContent);
   const saveFile = useProjectStore((s) => s.saveFile);
   const setSelection = useProjectStore((s) => s.setSelection);
@@ -88,10 +94,14 @@ export default function EditorScreen() {
     [tabSize, wordWrap, lineNumbers, autocomplete, activeLine, brackets, whitespace],
   );
 
+  const activeThemeId = useExtensionStore((s) => s.activeThemeId);
+  const themeSpec = useMemo(() => getThemeSpec(activeThemeId), [activeThemeId]);
+
   const [treeOpen, setTreeOpen] = useState(true);
   const [cursor, setCursor] = useState<{ line: number; col: number }>({ line: 1, col: 1 });
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [paletteInitial, setPaletteInitial] = useState('');
+  const [previewOpen, setPreviewOpen] = useState(false);
 
   const openPalette = (initial = '') => {
     setPaletteInitial(initial);
@@ -137,6 +147,30 @@ export default function EditorScreen() {
 
   const activeFile = openFiles.find((f) => f.uri === activeUri) ?? null;
   const activeDirty = activeFile ? isDirty(activeFile) : false;
+
+  // Close the preview when opening a different file or a non-Markdown one.
+  useEffect(() => {
+    setPreviewOpen(false);
+  }, [activeUri]);
+
+  /** Long-press a tab → VS-Code-like tab actions (Phase 1.1 reorder). */
+  const onTabLongPress = (uri: string) => {
+    const index = openFiles.findIndex((f) => f.uri === uri);
+    if (index === -1) return;
+    tapLight();
+    const name = openFiles[index].name;
+    const buttons = [
+      ...(index > 0
+        ? [{ text: 'Move Left', onPress: () => moveTab(uri, -1 as const) }]
+        : []),
+      ...(index < openFiles.length - 1
+        ? [{ text: 'Move Right', onPress: () => moveTab(uri, 1 as const) }]
+        : []),
+      { text: 'Close Tab', style: 'destructive' as const, onPress: () => void closeFile(uri) },
+      { text: 'Cancel', style: 'cancel' as const },
+    ];
+    Alert.alert(name, 'Tab actions', buttons);
+  };
   const tabs: EditorTabItem[] = useMemo(
     () => openFiles.map((f) => ({ uri: f.uri, name: f.name, dirty: isDirty(f) })),
     [openFiles],
@@ -310,6 +344,27 @@ export default function EditorScreen() {
             </Text>
           )}
         </View>
+        {activeFile?.language === 'markdown' && (
+          <Pressable
+            onPress={() => {
+              tapLight();
+              setPreviewOpen((o) => !o);
+            }}
+            style={({ pressed }) => [
+              styles.headerButton,
+              pressed && { backgroundColor: palette.surfacePressed },
+              previewOpen && { backgroundColor: palette.tint + '2a' },
+            ]}
+            accessibilityRole="button"
+            accessibilityLabel={previewOpen ? 'Close preview' : 'Open markdown preview'}
+          >
+            <Ionicons
+              name={previewOpen ? 'eye' : 'eye-outline'}
+              size={18}
+              color={previewOpen ? palette.tint : palette.text}
+            />
+          </Pressable>
+        )}
         {projectName && (
           <Pressable
             onPress={() => openPalette('')}
@@ -369,6 +424,7 @@ export default function EditorScreen() {
           tapLight();
           activateFile(uri);
         }}
+        onLongPress={onTabLongPress}
         onClose={(uri) => void closeFile(uri)}
       />
 
@@ -481,20 +537,39 @@ export default function EditorScreen() {
           )}
 
           {activeFile && (
-            <CodeEditor
-              key={activeFile.uri}
-              value={activeFile.content}
-              language={activeFile.language}
-              dark={palette.dark}
-              fontSize={fontSize}
-              vim={vimEnabled}
-              options={editorOptions}
-              revealLine={revealLine}
-              onChange={(content) => updateContent(activeFile.uri, content)}
-              onSaveShortcut={() => void saveFile()}
-              onSelectionChange={(text) => setSelection(text.length > 0 ? text : null)}
-              onCursorChange={(line, col) => setCursor({ line, col })}
-            />
+            <View style={styles.editorSplit}>
+              <View
+                style={[
+                  styles.editorPane,
+                  // Split preview: side-by-side on wide screens, preview
+                  // replaces the editor surface on narrow ones.
+                  previewOpen && (wide ? styles.editorPaneHalf : styles.editorPaneHidden),
+                ]}
+              >
+                <CodeEditor
+                  key={activeFile.uri}
+                  value={activeFile.content}
+                  language={activeFile.language}
+                  dark={themeSpec ? themeSpec.dark : palette.dark}
+                  fontSize={fontSize}
+                  vim={vimEnabled}
+                  options={editorOptions}
+                  themeSpec={themeSpec}
+                  revealLine={revealLine}
+                  onChange={(content) => updateContent(activeFile.uri, content)}
+                  onSaveShortcut={() => void saveFile()}
+                  onSelectionChange={(text) => setSelection(text.length > 0 ? text : null)}
+                  onCursorChange={(line, col) => setCursor({ line, col })}
+                />
+              </View>
+              {previewOpen && activeFile.language === 'markdown' && (
+                <MarkdownPreview
+                  palette={palette}
+                  content={activeFile.content}
+                  bordered={wide}
+                />
+              )}
+            </View>
           )}
 
           {/* VS Code-style status bar */}
@@ -552,6 +627,70 @@ export default function EditorScreen() {
 
 function EmptyState({ children, palette }: { children: React.ReactNode; palette: ReturnType<typeof usePalette> }) {
   return <View style={[styles.empty, { backgroundColor: palette.bg }]}>{children}</View>;
+}
+
+/** Split Markdown preview (Phase 1.1) — live-renders the buffer. */
+function MarkdownPreview({
+  palette,
+  content,
+  bordered,
+}: {
+  palette: Palette;
+  content: string;
+  bordered: boolean;
+}) {
+  const mdStyle = useMemo(
+    () => ({
+      body: {
+        color: palette.text,
+        fontSize: 14,
+        lineHeight: 21,
+      } as object,
+      heading1: { color: palette.text, fontSize: 24, marginVertical: 8 } as object,
+      heading2: { color: palette.text, fontSize: 20, marginVertical: 6 } as object,
+      heading3: { color: palette.text, fontSize: 17, marginVertical: 6 } as object,
+      code_inline: {
+        backgroundColor: palette.bgSecondary,
+        color: palette.tint,
+        borderRadius: 4,
+        paddingHorizontal: 4,
+      } as object,
+      fence: {
+        backgroundColor: palette.bgSecondary,
+        borderColor: palette.border,
+        borderWidth: StyleSheet.hairlineWidth,
+        borderRadius: 8,
+        padding: 10,
+        color: palette.text,
+      } as object,
+      blockquote: {
+        backgroundColor: palette.bgSecondary,
+        borderLeftColor: palette.tint,
+        borderLeftWidth: 3,
+        paddingHorizontal: 10,
+        borderRadius: 0,
+      } as object,
+      link: { color: palette.tint } as object,
+      hr: { backgroundColor: palette.border } as object,
+      table: { borderColor: palette.border } as object,
+      tr: { borderColor: palette.border } as object,
+    }),
+    [palette],
+  );
+  return (
+    <View
+      style={[
+        styles.previewPane,
+        bordered && styles.previewPaneBordered,
+        { borderLeftColor: palette.border, backgroundColor: palette.editorBg },
+      ]}
+      accessibilityLabel="Markdown preview"
+    >
+      <ScrollView contentContainerStyle={styles.previewScroll} keyboardShouldPersistTaps="handled">
+        <Markdown style={mdStyle}>{content}</Markdown>
+      </ScrollView>
+    </View>
+  );
 }
 
 /** Bottom strip à la VS Code: cursor position, indent, model pill, language. */
@@ -659,6 +798,13 @@ const styles = StyleSheet.create({
   },
   treeTitle: { fontSize: 13, fontWeight: '600', flexShrink: 1 },
   editorArea: { flex: 1, minWidth: 0 },
+  editorSplit: { flex: 1, flexDirection: 'row', minWidth: 0 },
+  editorPane: { flex: 1, minWidth: 0 },
+  editorPaneHalf: { flex: 0.55 },
+  editorPaneHidden: { display: 'none' },
+  previewPane: { flex: 1, minWidth: 0 },
+  previewPaneBordered: { flex: 0.45, borderLeftWidth: StyleSheet.hairlineWidth },
+  previewScroll: { padding: 16, paddingBottom: 40 },
   statusBar: {
     flexDirection: 'row',
     alignItems: 'center',

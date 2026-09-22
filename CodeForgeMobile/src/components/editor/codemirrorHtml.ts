@@ -54,21 +54,37 @@ let currentTheme = ${dark ? 'true' : 'false'};
 let currentFontSize = ${fontSize};
 let vimEnabled = false;
 let opts = ${initialJson};
+let currentSpec = null;
 
 async function main() {
   const { EditorView, keymap, lineNumbers, highlightActiveLine, highlightActiveLineGutter, drawSelection, highlightWhitespace, highlightTrailingWhitespace } =
     await import('${ESM}/@codemirror/view@6.36.2');
   const { EditorState, Compartment, Prec } = await import('${ESM}/@codemirror/state@6.5.2');
   const { defaultKeymap, history, historyKeymap, indentWithTab } = await import('${ESM}/@codemirror/commands@6.8.0');
-  const { syntaxHighlighting, defaultHighlightStyle, bracketMatching, foldGutter, indentOnInput, indentUnit } =
+  const { syntaxHighlighting, defaultHighlightStyle, bracketMatching, foldGutter, indentOnInput, indentUnit, HighlightStyle } =
     await import('${ESM}/@codemirror/language@6.11.0');
   const { autocompletion, closeBrackets, closeBracketsKeymap, completionKeymap } =
     await import('${ESM}/@codemirror/autocomplete@6.18.4');
   const { search, searchKeymap, highlightSelectionMatches } = await import('${ESM}/@codemirror/search@6.5.8');
   const { oneDark } = await import('${ESM}/@codemirror/theme-one-dark@6.1.3');
+  const { tags } = await import('${ESM}/@lezer/highlight@1.2.1');
+
+  // JS twin of src/lib/extensions/tagScope.ts — KEEP IN SYNC.
+  function resolveTagExpr(expr) {
+    const s = String(expr || '').trim();
+    if (!s) return null;
+    const paren = s.indexOf('(');
+    if (paren === -1) return Object.prototype.hasOwnProperty.call(tags, s) ? tags[s] : null;
+    if (!s.endsWith(')')) return null;
+    const base = tags[s.slice(0, paren).trim()];
+    const inner = resolveTagExpr(s.slice(paren + 1, -1));
+    if (!base || !inner) return null;
+    try { return base(inner); } catch (e) { return null; }
+  }
 
   const langCompartment = new Compartment();
   const themeCompartment = new Compartment();
+  const overrideCompartment = new Compartment(); // extension theme override (Phase 2)
   const vimCompartment = new Compartment();
   const gutterCompartment = new Compartment();   // line numbers + active-line gutter
   const wrapCompartment = new Compartment();     // word wrap
@@ -126,6 +142,41 @@ async function main() {
     }),
   ];
 
+  /** Extension theme override (Phase 2): applied after the base theme. */
+  const overrideFor = (spec) => {
+    if (!spec) return [];
+    const styleRules = [];
+    for (const rule of spec.syntax || []) {
+      for (const scopeExpr of rule.scope || []) {
+        const tag = resolveTagExpr(scopeExpr);
+        if (!tag) continue;
+        const entry = { tag };
+        if (rule.color) entry.color = rule.color;
+        if (rule.backgroundColor) entry.backgroundColor = rule.backgroundColor;
+        if (rule.fontStyle) entry.fontStyle = rule.fontStyle;
+        styleRules.push(entry);
+      }
+    }
+    const c = spec.colors || {};
+    return [
+      EditorView.theme({
+        '&': { backgroundColor: c.background, color: c.foreground },
+        '.cm-content': { caretColor: c.cursor },
+        '.cm-cursor, .cm-dropCursor': { borderLeftColor: c.cursor },
+        '&.cm-focused .cm-selectionBackground, .cm-selectionBackground, .cm-content ::selection':
+          { backgroundColor: c.selection },
+        '.cm-gutters': {
+          backgroundColor: c.gutterBackground,
+          color: c.gutterForeground,
+          border: 'none',
+        },
+        '.cm-activeLine': { backgroundColor: c.activeLine },
+        '.cm-activeLineGutter': { backgroundColor: c.activeLine },
+      }, { dark: !!spec.dark }),
+      syntaxHighlighting(HighlightStyle.define(styleRules), { fallback: false }),
+    ];
+  };
+
   async function vimExtension() {
     const mod = await import('${ESM}/@replit/codemirror-vim@6.2.1');
     return mod.vim();
@@ -168,6 +219,7 @@ async function main() {
       }])),
       langCompartment.of([]),
       themeCompartment.of(themeFor(currentTheme, currentFontSize)),
+      overrideCompartment.of(overrideFor(currentSpec)),
       vimCompartment.of([]),
       gutterCompartment.of(gutterExts(opts)),
       wrapCompartment.of(wrapExts(opts)),
@@ -230,12 +282,19 @@ async function main() {
     view.dispatch({ effects });
   }
 
+  function setThemeSpec(spec) {
+    currentSpec = spec || null;
+    if (currentSpec) document.body.style.background = currentSpec.colors.background;
+    view.dispatch({ effects: overrideCompartment.reconfigure(overrideFor(currentSpec)) });
+  }
+
   function route(raw) {
     let msg;
     try { msg = JSON.parse(raw); } catch { return; }
     if (msg.type === 'setValue') setValue(msg.value || '');
     else if (msg.type === 'setLanguage') void setLanguage(msg.lang);
     else if (msg.type === 'setTheme') setTheme(!!msg.dark);
+    else if (msg.type === 'setThemeSpec') setThemeSpec(msg.spec);
     else if (msg.type === 'setFontSize') setFontSize(msg.px || 14);
     else if (msg.type === 'setVim') void setVim(!!msg.enabled);
     else if (msg.type === 'setOptions') setOptions(msg.options);

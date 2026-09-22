@@ -47,6 +47,8 @@ interface ProjectState {
   openFile: (node: FileNode) => Promise<void>;
   activateFile: (uri: string) => void;
   closeFile: (uri: string) => Promise<void>;
+  /** Swap a tab one position left/right (VS Code tab reorder). */
+  moveTab: (uri: string, delta: -1 | 1) => void;
   updateContent: (uri: string, content: string) => void;
   saveFile: (uri?: string) => Promise<void>;
   setSelection: (text: string | null) => void;
@@ -236,6 +238,17 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
       const activeUri =
         s.activeUri === uri ? (openFiles.length > 0 ? openFiles[openFiles.length - 1].uri : null) : s.activeUri;
       return { openFiles, activeUri };
+    });
+  },
+
+  moveTab(uri, delta) {
+    set((s) => {
+      const index = s.openFiles.findIndex((f) => f.uri === uri);
+      const target = index + delta;
+      if (index === -1 || target < 0 || target >= s.openFiles.length) return s;
+      const openFiles = [...s.openFiles];
+      [openFiles[index], openFiles[target]] = [openFiles[target], openFiles[index]];
+      return { openFiles };
     });
   },
 

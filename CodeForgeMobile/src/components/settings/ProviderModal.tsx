@@ -22,6 +22,7 @@ import { createProviderClient } from '@/src/lib/ai/providers';
 import { useProviderRegistry } from '@/src/lib/ai/registry';
 import type { AIProviderConfig, AIModel, ProviderType } from '@/src/lib/ai/types';
 import { setApiKey } from '@/src/lib/storage/keychain';
+import { useSettingsStore } from '@/src/store/settingsStore';
 
 interface ProviderModalProps {
   visible: boolean;
@@ -170,8 +171,14 @@ export function ProviderModal({ visible, palette, editProvider, onClose }: Provi
         }).id;
       }
       // Store the key only when one was typed (never overwrite with blank).
+      // Biometric gating (PRD 3.2) applies when the user enabled it in
+      // Settings → Security.
       if (apiKey.trim().length > 0) {
-        await setApiKey(providerId, apiKey.trim());
+        await setApiKey(
+          providerId,
+          apiKey.trim(),
+          useSettingsStore.getState().biometricKeyGate,
+        );
       }
       setStatus({ kind: 'ok', text: 'Saved.' });
       setTimeout(onClose, 350);

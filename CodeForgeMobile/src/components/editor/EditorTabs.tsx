@@ -18,10 +18,12 @@ interface EditorTabsProps {
   activeUri: string | null;
   palette: Palette;
   onSelect: (uri: string) => void;
+  /** Long-press → tab actions (reorder/close), VS-Code-like context menu. */
+  onLongPress?: (uri: string) => void;
   onClose: (uri: string) => void;
 }
 
-export function EditorTabs({ tabs, activeUri, palette, onSelect, onClose }: EditorTabsProps) {
+export function EditorTabs({ tabs, activeUri, palette, onSelect, onLongPress, onClose }: EditorTabsProps) {
   if (tabs.length === 0) return null;
   return (
     <View style={[styles.strip, { backgroundColor: palette.bgSecondary, borderColor: palette.border }]}>
@@ -32,6 +34,8 @@ export function EditorTabs({ tabs, activeUri, palette, onSelect, onClose }: Edit
             <Pressable
               key={tab.uri}
               onPress={() => onSelect(tab.uri)}
+              onLongPress={onLongPress ? () => onLongPress(tab.uri) : undefined}
+              delayLongPress={350}
               style={[
                 styles.tab,
                 { borderColor: palette.border },

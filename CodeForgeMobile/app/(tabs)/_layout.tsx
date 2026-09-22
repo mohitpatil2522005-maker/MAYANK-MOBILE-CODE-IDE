@@ -38,6 +38,15 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
+        name="extensions"
+        options={{
+          title: 'Extensions',
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="extension-puzzle-outline" size={size} color={color} />
+          ),
+        }}
+      />
+      <Tabs.Screen
         name="settings"
         options={{
           title: 'Settings',

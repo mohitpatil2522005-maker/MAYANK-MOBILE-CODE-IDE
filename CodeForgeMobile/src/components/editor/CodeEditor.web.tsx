@@ -3,7 +3,7 @@
  * Uses @uiw/react-codemirror directly; language parsers and the vim extension
  * are lazy-loaded so the initial bundle stays light.
  */
-import { indentUnit } from '@codemirror/language';
+import { HighlightStyle, indentUnit, syntaxHighlighting } from '@codemirror/language';
 import { Prec, EditorState, type Extension } from '@codemirror/state';
 import { oneDark } from '@codemirror/theme-one-dark';
 import {
@@ -12,12 +12,15 @@ import {
   highlightWhitespace,
   keymap,
 } from '@codemirror/view';
+import { tags as lezerTags } from '@lezer/highlight';
 import CodeMirror from '@uiw/react-codemirror';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
 import { DEFAULT_EDITOR_OPTIONS, type EditorOptions } from '@/src/lib/editor/editorOptions';
 import type { LanguageId } from '@/src/lib/editor/languages';
+import { resolveTagExpr } from '@/src/lib/extensions/tagScope';
+import type { EditorThemeSpec } from '@/src/lib/extensions/themes';
 
 export interface CodeEditorProps {
   value: string;
@@ -27,6 +30,8 @@ export interface CodeEditorProps {
   vim: boolean;
   /** Feature switches from the settings schema (tab size, wrap, gutters…). */
   options?: EditorOptions;
+  /** Extension theme override (Phase 2); null/undefined → built-in theme. */
+  themeSpec?: EditorThemeSpec | null;
   editable?: boolean;
   onChange: (value: string) => void;
   onSaveShortcut?: () => void;
@@ -115,6 +120,7 @@ export default function CodeEditor({
   fontSize,
   vim,
   options,
+  themeSpec = null,
   editable = true,
   onChange,
   onSaveShortcut,
@@ -158,6 +164,51 @@ export default function CodeEditor({
     if (langExt) list.push(langExt);
     if (opts.wordWrap) list.push(EditorView.lineWrapping);
     if (opts.whitespace) list.push(highlightWhitespace(), highlightTrailingWhitespace());
+    // Phase 2: extension theme override (after the base theme so it wins).
+    if (themeSpec) {
+      const rules: { tag: unknown; color?: string; backgroundColor?: string; fontStyle?: string }[] =
+        [];
+      for (const rule of themeSpec.syntax) {
+        for (const expr of rule.scope) {
+          const tag = resolveTagExpr(expr, lezerTags as unknown as Record<string, unknown>);
+          if (!tag) continue;
+          rules.push({
+            tag,
+            ...(rule.color ? { color: rule.color } : {}),
+            ...(rule.backgroundColor ? { backgroundColor: rule.backgroundColor } : {}),
+            ...(rule.fontStyle ? { fontStyle: rule.fontStyle } : {}),
+          });
+        }
+      }
+      const c = themeSpec.colors;
+      list.push(
+        EditorView.theme(
+          {
+            '&': { backgroundColor: c.background, color: c.foreground },
+            '.cm-content': { caretColor: c.cursor },
+            '.cm-cursor, .cm-dropCursor': { borderLeftColor: c.cursor },
+            '&.cm-focused .cm-selectionBackground, .cm-selectionBackground, .cm-content ::selection':
+              { backgroundColor: c.selection },
+            '.cm-gutters': {
+              backgroundColor: c.gutterBackground,
+              color: c.gutterForeground,
+              border: 'none',
+            },
+            '.cm-activeLine': { backgroundColor: c.activeLine },
+            '.cm-activeLineGutter': { backgroundColor: c.activeLine },
+          },
+          { dark: themeSpec.dark },
+        ),
+      );
+      if (rules.length) {
+        list.push(
+          syntaxHighlighting(
+            HighlightStyle.define(rules as Parameters<typeof HighlightStyle.define>[0]),
+            { fallback: false },
+          ),
+        );
+      }
+    }
     list.push(
       EditorState.tabSize.of(opts.tabSize),
       indentUnit.of(' '.repeat(opts.tabSize)),
@@ -178,7 +229,7 @@ export default function CodeEditor({
       }),
     );
     return list;
-  }, [langExt, vimExt, fontSize, opts]);
+  }, [langExt, vimExt, fontSize, opts, themeSpec]);
 
   return (
     <View style={styles.container}>

@@ -22,7 +22,7 @@ npx expo run:android      # native Android
 npx expo run:ios          # native iOS (macOS)
 npm run web               # browser preview
 npm run typecheck         # tsc --noEmit (strict)
-npm test                  # 6 logic suites · 151 checks (SSE, tools, providers, export, settings, fuzzy)
+npm test                  # 7 logic suites · 184 checks (SSE, tools, providers, export, settings, fuzzy, themes)
 ```
 
 CI runs the same typecheck + test commands on every push/PR:
@@ -41,6 +41,22 @@ CI runs the same typecheck + test commands on every push/PR:
 
 ### Hardening ✚
 
+- **Extension system v1 (Phase 2)** — marketplace-style **Extensions tab**
+  (🧩): search, INSTALLED / FEATURED sections, install-uninstall-enable
+  flow. Ships 4 VS Code theme extensions (Dracula, Monokai, GitHub Light,
+  Tokyo Night) converted on the fly by the theme engine
+  (`src/lib/extensions/themes.ts`): VS Code `.json` tokenColors/colors →
+  CodeMirror `HighlightStyle` + editor chrome, applied to BOTH editor builds
+  (native WebView via a serializable theme spec over the bridge, web via
+  direct extensions). Tag-expression resolver in `tagScope.ts`
+  (`function(variableName)` → Lezer tags), test-covered.
+- **Markdown split preview (Phase 1.1)** — eye button on `.md` files toggles
+  a live preview pane (side-by-side on wide screens, swap view on phones).
+- **Tab reorder (Phase 1.1)** — long-press any tab → Move Left/Right/Close
+  action sheet (projectStore `moveTab`).
+- **Biometric key gate (PRD 3.2)** — Settings → Security → _Biometric API
+  Keys_: keys saved afterwards require Face ID / fingerprint / passcode on
+  every keychain read (`react-native-keychain` access control).
 - **Command palette / quick open (Phase 1.2)** — header 🔍 button or
   `Ctrl/Cmd+P` (web) opens fuzzy quick-open over all project files;
   `>` switches to command mode (`Ctrl/Cmd+Shift+P`): save, close, send to

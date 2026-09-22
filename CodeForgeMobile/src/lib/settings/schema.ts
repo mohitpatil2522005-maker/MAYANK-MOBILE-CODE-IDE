@@ -8,7 +8,7 @@
  * schema is the single source of truth.
  */
 
-export type SettingSectionId = 'appearance' | 'editor' | 'features' | 'files';
+export type SettingSectionId = 'appearance' | 'editor' | 'features' | 'files' | 'security';
 
 export interface SettingSection {
   id: SettingSectionId;
@@ -20,6 +20,7 @@ export const SETTING_SECTIONS: SettingSection[] = [
   { id: 'editor', label: 'Editor' },
   { id: 'features', label: 'Editor Features' },
   { id: 'files', label: 'Files' },
+  { id: 'security', label: 'Security' },
 ];
 
 interface SettingBase {
@@ -188,6 +189,19 @@ export const SETTING_DEFS: SettingDef[] = [
     title: 'Auto Save',
     description: 'Save dirty files ~1s after you stop typing. Ctrl/Cmd+S always saves.',
     keywords: ['save', 'persist'],
+    defaultValue: false,
+  },
+
+  // ─── Security ────────────────────────────────────────────────
+  {
+    kind: 'boolean',
+    id: 'security.biometricKeys',
+    key: 'biometricKeyGate',
+    section: 'security',
+    title: 'Biometric API Keys',
+    description:
+      'Require Face ID / fingerprint to read or edit API keys saved after enabling. Keys always live in the OS keychain.',
+    keywords: ['face id', 'touch id', 'fingerprint', 'keychain', 'protect'],
     defaultValue: false,
   },
 ];

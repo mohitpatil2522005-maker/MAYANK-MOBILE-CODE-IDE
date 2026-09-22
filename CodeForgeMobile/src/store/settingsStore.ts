@@ -30,6 +30,8 @@ interface SettingsState {
   whitespaceVisible: boolean;
   // Files
   autoSave: boolean;
+  // Security
+  biometricKeyGate: boolean;
 
   /** Schema-validated generic setter used by the settings screen. */
   setOption: (key: string, value: SettingValue) => void;
@@ -73,6 +75,7 @@ export const useSettingsStore = create<SettingsState>()(
       bracketsEnabled: SETTING_DEFAULTS.bracketsEnabled !== false,
       whitespaceVisible: SETTING_DEFAULTS.whitespaceVisible === true,
       autoSave: SETTING_DEFAULTS.autoSave === true,
+      biometricKeyGate: SETTING_DEFAULTS.biometricKeyGate === true,
 
       setOption: (key, value) => {
         const coerced = coerceSettingValue(key, value);
