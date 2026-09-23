@@ -25,6 +25,7 @@
     "@replit/codemirror-vim": "^6.4.0",
     "@uiw/react-codemirror": "^4.25.11",
     "expo": "~57.0.24",
+    "expo-build-properties": "~57.0.21",
     "expo-clipboard": "^57.0.2",
     "expo-constants": "~57.0.19",
     "expo-document-picker": "^57.0.2",
@@ -37,6 +38,7 @@
     "expo-status-bar": "~57.0.1",
     "expo-symbols": "~57.0.3",
     "expo-web-browser": "~57.0.3",
+    "punycode": "^2.3.1",
     "react": "19.2.3",
     "react-dom": "19.2.3",
     "react-native": "0.86.3",
@@ -61,7 +63,7 @@
     "ios": "expo start --ios",
     "web": "expo start --web",
     "typecheck": "tsc --noEmit",
-    "test": "for f in tests/*.test.ts; do tsx \"$f\" || exit 1; done"
+    "test": "npx tsx tests/checkpoint.test.ts && npx tsx tests/find.test.ts && npx tsx tests/fuzzy.test.ts && npx tsx tests/permissions.test.ts && npx tsx tests/providers.test.ts && npx tsx tests/scm.test.ts && npx tsx tests/sessionExport.test.ts && npx tsx tests/settings.test.ts && npx tsx tests/sse.test.ts && npx tsx tests/tabs.test.ts && npx tsx tests/themes.test.ts && npx tsx tests/tools.test.ts"
   },
   "private": true
 }

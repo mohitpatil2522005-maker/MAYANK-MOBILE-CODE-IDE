@@ -251,5 +251,5 @@ interface AIProvider {
 
 ---
 
-*Document version: 0.1.0 — Last updated: 2026-09-21*
+*Document version: 1.1.0 — Last updated: 2026-09-21*
 *Author: Mayank AI Product Team*

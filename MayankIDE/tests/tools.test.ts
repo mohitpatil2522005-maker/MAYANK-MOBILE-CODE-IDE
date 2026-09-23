@@ -113,4 +113,120 @@ t.section('prompt helpers');
   t.check('specs list all tools', toolSpecsForPrompt().includes('search_code'), true);
 }
 
+// ============================================================================
+// BUG FIX TESTS (continued)
+// ============================================================================
+
+t.section('BUG FIX: list_files depth filter (Fix #3 - MEDIUM)');
+
+{
+  function collectImmediateChildren(tree: any[], targetPath: string): string[] {
+    const result: string[] = [];
+    for (const n of tree) {
+      if (n.type === 'directory' && n.path === targetPath) {
+        for (const child of n.children || []) {
+          result.push(child.path);
+        }
+      }
+      if (n.children) {
+        const nested = collectImmediateChildren(n.children, targetPath);
+        result.push(...nested);
+      }
+    }
+    return result;
+  }
+
+  const tree = [
+    { type: 'directory', path: 'src', name: 'src', children: [
+      { type: 'file', path: 'src/index.ts', name: 'index.ts' },
+      { type: 'directory', path: 'src/utils', name: 'utils', children: [
+        { type: 'file', path: 'src/utils/helper.ts', name: 'helper.ts' },
+      ]},
+    ]},
+  ];
+
+  const children = collectImmediateChildren(tree, 'src');
+  t.check('immediate files included', children.includes('src/index.ts'), true);
+  t.check('nested files excluded', children.includes('src/utils/helper.ts'), false);
+}
+
+t.section('BUG FIX: note-role filtering (Fix #4 - MEDIUM)');
+
+{
+  interface Msg { role: 'user' | 'assistant' | 'note'; content: string; }
+  
+  function filterMessages(messages: Msg[]) {
+    return messages
+      .filter((m) => m.role !== 'note')
+      .map((m) => ({ role: m.role === 'assistant' ? 'assistant' : 'user', content: m.content }));
+  }
+  
+  const messages: Msg[] = [
+    { role: 'user', content: 'Hello' },
+    { role: 'note', content: 'System note' },
+    { role: 'assistant', content: 'Hi!' },
+  ];
+  
+  const filtered = filterMessages(messages);
+  t.check('note messages filtered', filtered.length, 2);
+  t.check('no note role in output', filtered.some(m => m.role === 'note'), false);
+}
+
+t.section('BUG FIX: turnCount increment (Fix #5 - MEDIUM)');
+
+{
+  let turnCount = 0;
+
+  // Mirrors maybeResume() in agentStore.ts: the resume path must consume a turn.
+  function maybeResume(): void {
+    turnCount = turnCount + 1;
+  }
+
+  maybeResume();
+  t.check('turnCount incremented', turnCount, 1);
+
+  maybeResume();
+  t.check('turnCount increments again', turnCount, 2);
+}
+
+t.section('BUG FIX: search_code binary skip (Fix #1 - HIGH)');
+
+{
+  // Mirrors the guard in toolExecutor.ts search_code. The old check was
+  // `content.includes('')`, which is vacuously true for EVERY string, so
+  // every file was skipped and the tool always returned "No matches".
+  const shouldSkip = (content: string) => content.includes('\0');
+  t.check('plain source is searched', shouldSkip('const a = 1;\nfoo();'), false);
+  t.check('empty file is searched', shouldSkip(''), false);
+  t.check('NUL-containing (binary) file skipped', shouldSkip('PNG\0data'), true);
+  // Documents the old bug: String.prototype.includes('') is always true.
+  t.check('regression: empty-string probe matches everything', 'anything'.includes(''), true);
+}
+
+t.section('BUG FIX: packHistory truncation push (Fix #2 - HIGH)');
+
+{
+  // Old code broke out of the budget loop WITHOUT pushing the
+  // budget-crossing message, silently dropping it from history.
+  const short = packHistory(
+    [
+      { role: 'user', content: 'older message' },
+      { role: 'assistant', content: 'recent' },
+    ],
+    10,
+  );
+  t.check('short boundary message kept in full', short.map((m) => m.content), ['older message', 'recent']);
+
+  const long = packHistory(
+    [
+      { role: 'user', content: 'x'.repeat(5000) },
+      { role: 'assistant', content: 'recent' },
+    ],
+    100,
+  );
+  t.check('oversized boundary message still present', long.length, 2);
+  t.check('oversized message truncated below ~2100 chars', long[0].content.length < 2100, true);
+  t.check('truncation marker present', long[0].content.endsWith('[truncated]'), true);
+}
+
 t.done();

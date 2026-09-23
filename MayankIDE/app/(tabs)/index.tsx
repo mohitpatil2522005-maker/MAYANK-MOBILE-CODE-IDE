@@ -4,7 +4,7 @@
  */
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -23,6 +23,10 @@ import CodeEditor from '@/src/components/editor/CodeEditor';
 import { CommandPalette, type PaletteCommand } from '@/src/components/editor/CommandPalette';
 import { EditorTabs, type EditorTabItem } from '@/src/components/editor/EditorTabs';
 import { FileTree } from '@/src/components/editor/FileTree';
+import { FindBar } from '@/src/components/editor/FindBar';
+import { ReviewChangesSheet } from '@/src/components/editor/ReviewChangesSheet';
+import { ScmSheet } from '@/src/components/editor/ScmSheet';
+import type { FindOptions } from '@/src/lib/editor/find';
 import { usePalette, type Palette } from '@/src/constants/theme';
 import { DEFAULT_EDITOR_OPTIONS } from '@/src/lib/editor/editorOptions';
 import { LANGUAGE_LABELS } from '@/src/lib/editor/languages';
@@ -102,6 +106,10 @@ export default function EditorScreen() {
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [paletteInitial, setPaletteInitial] = useState('');
   const [previewOpen, setPreviewOpen] = useState(false);
+  const [findVisible, setFindVisible] = useState(false);
+  const [reviewOpen, setReviewOpen] = useState(false);
+  const [scmOpen, setScmOpen] = useState(false);
+  const editorRef = useRef<import('@/src/components/editor/CodeEditor').CodeEditorHandle>(null);
 
   const openPalette = (initial = '') => {
     setPaletteInitial(initial);
@@ -114,7 +122,7 @@ export default function EditorScreen() {
   }, []);
 
   // Web (and external keyboards): Cmd/Ctrl+S save, Cmd/Ctrl+P quick-open,
-  // Cmd/Ctrl+Shift+P command mode — outside the editor surface.
+  // Cmd/Ctrl+Shift+P command mode, Cmd/Ctrl+F find — outside the editor surface.
   useEffect(() => {
     if (Platform.OS !== 'web') return;
     const w = globalThis as {
@@ -139,6 +147,9 @@ export default function EditorScreen() {
       } else if (key === 'p') {
         kev.preventDefault?.();
         openPalette(kev.shiftKey ? '>' : '');
+      } else if (key === 'f' && !kev.shiftKey) {
+        kev.preventDefault?.();
+        setFindVisible(true);
       }
     };
     w.addEventListener('keydown', handler);
@@ -221,6 +232,13 @@ export default function EditorScreen() {
           run: () => void saveFile().then(() => notifySuccess()),
         },
         {
+          id: 'file.find',
+          title: 'Find in File',
+          hint: 'Ctrl/Cmd+F',
+          icon: 'search-outline',
+          run: () => setFindVisible(true),
+        },
+        {
           id: 'file.close',
           title: `Close ${activeFile.name}`,
           icon: 'close-circle-outline',
@@ -267,6 +285,18 @@ export default function EditorScreen() {
       title: 'Open Settings',
       icon: 'settings-outline',
       run: () => router.push('/settings'),
+    });
+    list.push({
+      id: 'review.open',
+      title: 'Review Changes (Checkpoints)',
+      icon: 'git-branch-outline',
+      run: () => setReviewOpen(true),
+    });
+    list.push({
+      id: 'scm.open',
+      title: 'Source Control',
+      icon: 'git-network-outline',
+      run: () => setScmOpen(true),
     });
     if (activeFile) {
       list.push({
@@ -547,6 +577,7 @@ export default function EditorScreen() {
                 ]}
               >
                 <CodeEditor
+                  ref={editorRef}
                   key={activeFile.uri}
                   value={activeFile.content}
                   language={activeFile.language}
@@ -560,6 +591,7 @@ export default function EditorScreen() {
                   onSaveShortcut={() => void saveFile()}
                   onSelectionChange={(text) => setSelection(text.length > 0 ? text : null)}
                   onCursorChange={(line, col) => setCursor({ line, col })}
+                  onFindRequest={() => setFindVisible(true)}
                 />
               </View>
               {previewOpen && activeFile.language === 'markdown' && (
@@ -585,6 +617,37 @@ export default function EditorScreen() {
               autoSave={autoSave}
             />
           )}
+
+          {/* In-editor Find & Replace bar (Slice 1) */}
+          {activeFile && (
+            <FindBar
+              palette={palette}
+              visible={findVisible}
+              document={activeFile.content}
+              onClose={() => setFindVisible(false)}
+              onQuery={(q, options) => {
+                editorRef.current?.postMessage(
+                  JSON.stringify({ type: 'find', query: q, options }),
+                );
+              }}
+              onNext={() => {
+                editorRef.current?.postMessage(JSON.stringify({ type: 'findNext' }));
+              }}
+              onPrev={() => {
+                editorRef.current?.postMessage(JSON.stringify({ type: 'findPrev' }));
+              }}
+              onReplace={(r) => {
+                editorRef.current?.postMessage(
+                  JSON.stringify({ type: 'replaceOne', replacement: r }),
+                );
+              }}
+              onReplaceAll={(r) => {
+                editorRef.current?.postMessage(
+                  JSON.stringify({ type: 'replaceAll', replacement: r }),
+                );
+              }}
+            />
+          )}
         </View>
 
         {!wide && treeOpen && projectName && (
@@ -608,6 +671,16 @@ export default function EditorScreen() {
         commands={paletteCommands}
         initialQuery={paletteInitial}
       />
+
+      {/* Review Changes / Checkpoints sheet (Slice 2) */}
+      <ReviewChangesSheet
+        visible={reviewOpen}
+        palette={palette}
+        onClose={() => setReviewOpen(false)}
+      />
+
+      {/* Source-control sheet (Slice 4) */}
+      <ScmSheet visible={scmOpen} palette={palette} onClose={() => setScmOpen(false)} />
 
       {/* Error toast */}
       {error && (

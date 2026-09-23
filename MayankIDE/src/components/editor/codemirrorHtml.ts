@@ -65,7 +65,7 @@ async function main() {
     await import('${ESM}/@codemirror/language@6.11.0');
   const { autocompletion, closeBrackets, closeBracketsKeymap, completionKeymap } =
     await import('${ESM}/@codemirror/autocomplete@6.18.4');
-  const { search, searchKeymap, highlightSelectionMatches } = await import('${ESM}/@codemirror/search@6.5.8');
+  const { search, searchKeymap, highlightSelectionMatches, openSearchPanel, findNext, findPrevious, replaceNext, replaceAll, setSearchQuery } = await import('${ESM}/@codemirror/search@6.5.8');
   const { oneDark } = await import('${ESM}/@codemirror/theme-one-dark@6.1.3');
   const { tags } = await import('${ESM}/@lezer/highlight@1.2.1');
 
@@ -216,6 +216,12 @@ async function main() {
       Prec.highest(keymap.of([{
         key: 'Mod-s',
         run: () => { post({ type: 'save' }); return true; },
+      }, {
+        key: 'Mod-f',
+        run: () => { post({ type: 'openFind' }); return true; },
+      }, {
+        key: 'Mod-h',
+        run: () => { post({ type: 'openFind', initial: '' }); return true; },
       }])),
       langCompartment.of([]),
       themeCompartment.of(themeFor(currentTheme, currentFontSize)),
@@ -308,6 +314,36 @@ async function main() {
       view.focus();
     }
     else if (msg.type === 'focus') view.focus();
+    else if (msg.type === 'find') {
+      try {
+        const q = {
+          search: msg.query || '',
+          caseSensitive: !!msg.options?.caseSensitive,
+          regexp: !!msg.options?.regex,
+          wholeWord: !!msg.options?.wholeWord,
+          replace: '',
+        };
+        setSearchQuery(view, q);
+        openSearchPanel(view);
+      } catch (e) { post({ type: 'error', message: 'find: ' + String(e) }); }
+    }
+    else if (msg.type === 'findNext') { findNext(view); }
+    else if (msg.type === 'findPrev') { findPrevious(view); }
+    else if (msg.type === 'replaceOne') {
+      try {
+        const s = view.state.field(search.ext) || null;
+        if (s) s.replace = msg.replacement || '';
+        replaceNext(view);
+      } catch (e) { post({ type: 'error', message: 'replaceOne: ' + String(e) }); }
+    }
+    else if (msg.type === 'replaceAll') {
+      try {
+        const s = view.state.field(search.ext) || null;
+        if (s) s.replace = msg.replacement || '';
+        replaceAll(view);
+      } catch (e) { post({ type: 'error', message: 'replaceAll: ' + String(e) }); }
+    }
+    else if (msg.type === 'openFind') { openSearchPanel(view); }
   }
   // react-native-webview delivers postMessage on document (android) or window (ios)
   document.addEventListener('message', (e) => route(e.data));

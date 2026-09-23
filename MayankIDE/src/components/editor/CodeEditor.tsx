@@ -12,8 +12,17 @@ import WebViewBase, {
 
 import type { LanguageId } from '@/src/lib/editor/languages';
 import { DEFAULT_EDITOR_OPTIONS, type EditorOptions } from '@/src/lib/editor/editorOptions';
+import type { FindOptions } from '@/src/lib/editor/find';
 import type { EditorThemeSpec } from '@/src/lib/extensions/themes';
 import { buildEditorHtml } from './codemirrorHtml';
+
+/** Imperative handle exposed via ref — lets the host push messages (e.g. openFind). */
+export interface CodeEditorHandle {
+  /** Push a raw message string to the editor. Used by the Find/Replace bar. */
+  postMessage: (data: string) => void;
+  /** Force the editor to focus. */
+  focus: () => void;
+}
 
 /** Instance methods used from the WebView ref (typed loosely in the lib). */
 interface WebViewHandle {
@@ -46,6 +55,8 @@ export interface CodeEditorProps {
   onCursorChange?: (line: number, col: number) => void;
   /** 1-based line to scroll to + select (e.g. after an agent edit applies). */
   revealLine?: number | null;
+  /** Open the in-editor find panel and seed its query. */
+  onFindRequest?: (initial?: string) => void;
 }
 
 type OutboundMessage =
@@ -57,18 +68,25 @@ type OutboundMessage =
   | { type: 'setVim'; enabled: boolean }
   | { type: 'setOptions'; options: EditorOptions }
   | { type: 'revealLine'; line: number }
-  | { type: 'focus' };
+  | { type: 'focus' }
+  | { type: 'find'; query: string; options: FindOptions }
+  | { type: 'findNext' }
+  | { type: 'findPrev' }
+  | { type: 'replaceOne'; replacement: string }
+  | { type: 'replaceAll'; replacement: string }
+  | { type: 'openFind'; initial?: string };
 
 interface InboundMessage {
-  type: 'ready' | 'change' | 'save' | 'error' | 'selection';
+  type: 'ready' | 'change' | 'save' | 'error' | 'selection' | 'openFind';
   value?: string;
   text?: string;
   line?: number;
   col?: number;
   message?: string;
+  initial?: string;
 }
 
-export default function CodeEditor({
+function CodeEditorInner({
   value,
   language,
   dark,
@@ -81,7 +99,8 @@ export default function CodeEditor({
   onSelectionChange,
   onCursorChange,
   revealLine = null,
-}: CodeEditorProps) {
+  onFindRequest,
+}: CodeEditorProps, ref: React.Ref<CodeEditorHandle>) {
   const webRef = useRef<WebViewHandle>(null);
   const ready = useRef(false);
   const queue = useRef<string[]>([]);
@@ -93,8 +112,8 @@ export default function CodeEditor({
   );
   const latest = useRef({ language, dark, fontSize, vim, options: editorOptions, themeSpec });
   latest.current = { language, dark, fontSize, vim, options: editorOptions, themeSpec };
-  const callbacks = useRef({ onChange, onSaveShortcut, onSelectionChange, onCursorChange });
-  callbacks.current = { onChange, onSaveShortcut, onSelectionChange, onCursorChange };
+  const callbacks = useRef({ onChange, onSaveShortcut, onSelectionChange, onCursorChange, onFindRequest });
+  callbacks.current = { onChange, onSaveShortcut, onSelectionChange, onCursorChange, onFindRequest };
 
   // HTML depends only on initial appearance; updates go through messages.
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -105,6 +124,22 @@ export default function CodeEditor({
     if (ready.current) webRef.current?.postMessage(serialized);
     else queue.current.push(serialized);
   };
+
+  React.useImperativeHandle(
+    ref,
+    () => ({
+      postMessage: (data: string) => {
+        try {
+          const msg = JSON.parse(data) as OutboundMessage;
+          post(msg);
+        } catch {
+          // ignore malformed
+        }
+      },
+      focus: () => post({ type: 'focus' }),
+    }),
+    [],
+  );
 
   // Prop → WebView sync (echo-safe for setValue: only push external changes).
   useEffect(() => {
@@ -157,6 +192,8 @@ export default function CodeEditor({
     } else if (msg.type === 'error') {
       // Editor-page errors surface in dev mode only; never crash the app.
       if (__DEV__) console.warn('[CodeEditor WebView]', msg.message);
+    } else if (msg.type === 'openFind') {
+      callbacks.current.onFindRequest?.(msg.initial);
     }
   };
 
@@ -177,7 +214,11 @@ export default function CodeEditor({
       />
     </View>
   );
-}
+};
+
+const CodeEditor = React.forwardRef<CodeEditorHandle, CodeEditorProps>(CodeEditorInner);
+
+export default CodeEditor;
 
 const styles = StyleSheet.create({
   container: { flex: 1, minHeight: 0, minWidth: 0 },

@@ -6,6 +6,7 @@
 import { computeLineDiff, type ComputedDiff } from '@/src/lib/diff';
 import { projectFS } from '@/src/lib/fs/projectFs';
 import type { FileNode } from '@/src/lib/fs/types';
+import { useCheckpointStore } from '@/src/store/checkpointStore';
 import { isDirty, useProjectStore } from '@/src/store/projectStore';
 import { capContent } from './agent';
 import type { ParsedToolCall } from './tools';
@@ -120,7 +121,16 @@ export async function executeReadOnlyTool(call: ParsedToolCall): Promise<ToolExe
       if (path) files = files.filter((f) => f.path.startsWith(path.replace(/^\/+/, '') + '/') || f.path === path);
       const lines: string[] = [];
       for (const f of files) {
-        if (!recursive && f.path.includes('/') && !path) continue;
+        if (!recursive) {
+          if (path) {
+            const parent = path.replace(/^\/+/, '');
+            if (f.path !== parent && !f.path.startsWith(parent + '/')) continue;
+            const rest = f.path.slice(parent.length).replace(/^\//, '');
+            if (rest.includes('/')) continue;
+          } else if (f.path.includes('/')) {
+            continue;
+          }
+        }
         lines.push(f.path);
         if (lines.length >= LIST_MAX_ENTRIES) {
           lines.push(`… (${files.length - LIST_MAX_ENTRIES} more)`);
@@ -161,7 +171,7 @@ export async function executeReadOnlyTool(call: ParsedToolCall): Promise<ToolExe
         } catch {
           continue;
         }
-        if (content.includes('')) continue; // skip binary-ish
+        if (content.includes('\0')) continue; // skip binary-ish
         const lines = content.split('\n');
         for (let i = 0; i < lines.length; i++) {
           if (matcher(lines[i])) {
@@ -285,6 +295,23 @@ export async function applyWriteCall(
 ): Promise<ToolExecutionResult> {
   const state = useProjectStore.getState();
   const node = findFileByPath(preview.path);
+
+  // Snapshot the affected file(s) *before* the write so the user can revert
+  // from the Checkpoints panel (Slice 2 / §9.10 of the masterprompt).
+  try {
+    const preFiles: Record<string, string> = {};
+    if (node) {
+      const open = state.openFiles.find((f) => f.uri === node.uri);
+      preFiles[node.path] = open ? open.content : await currentFileText(node);
+    }
+    useCheckpointStore.getState().pushFromFiles(
+      preFiles,
+      `${call.tool} ${preview.path}`,
+      'agent',
+    );
+  } catch {
+    // Checkpoint creation must never block the actual write.
+  }
 
   try {
     if (node) {

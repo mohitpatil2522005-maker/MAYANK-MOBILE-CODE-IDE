@@ -7,6 +7,7 @@ import { Alert, Platform } from 'react-native';
 import { create } from 'zustand';
 
 import { languageFromFilename, type LanguageId } from '@/src/lib/editor/languages';
+import { adjacentActiveUri } from '@/src/lib/editor/tabs';
 import { createDemoProject } from '@/src/lib/fs/demoProject';
 import { projectFS } from '@/src/lib/fs/projectFs';
 import type { FileNode } from '@/src/lib/fs/types';
@@ -235,8 +236,15 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
     }
     set((s) => {
       const openFiles = s.openFiles.filter((f) => f.uri !== uri);
+      // When the closed tab was active, activate its adjacent neighbour
+      // (left, else right) instead of blindly jumping to the last tab (Fix #8).
       const activeUri =
-        s.activeUri === uri ? (openFiles.length > 0 ? openFiles[openFiles.length - 1].uri : null) : s.activeUri;
+        s.activeUri === uri
+          ? adjacentActiveUri(
+              s.openFiles.map((f) => f.uri),
+              uri,
+            )
+          : s.activeUri;
       return { openFiles, activeUri };
     });
   },

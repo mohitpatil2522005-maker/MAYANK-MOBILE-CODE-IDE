@@ -20,6 +20,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { usePalette, type Palette } from '@/src/constants/theme';
 import { ProviderList } from '@/src/components/settings/ProviderList';
+import { PermissionsPanel } from '@/src/components/settings/PermissionsPanel';
 import {
   filterSettings,
   SETTING_DEFS,
@@ -137,9 +138,16 @@ export default function SettingsScreen() {
             >
               <Ionicons name="close-circle-outline" size={16} color={palette.danger} />
               <Text style={[styles.dangerButtonText, { color: palette.danger }]}>
-                Close “{projectName}”
+                Close "{projectName}"
               </Text>
             </Pressable>
+          </Section>
+        )}
+
+        {/* Agent permissions + audit log (Slice 3, §9.3b) */}
+        {!searching && (
+          <Section palette={palette} title="Security">
+            <PermissionsPanel palette={palette} />
           </Section>
         )}
 

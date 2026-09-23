@@ -1,0 +1,56 @@
+# .easignore — controls what `eas build` uploads.
+# NOTE: when this file exists it REPLACES .gitignore for EAS archive creation,
+# so the project's .gitignore rules are mirrored below.
+
+# dependencies
+node_modules/
+
+# Expo
+.expo/
+dist/
+web-build/
+expo-env.d.ts
+
+# Native
+.kotlin/
+*.orig.*
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+
+# Metro
+.metro-health-check*
+
+# debug
+npm-debug.*
+yarn-debug.*
+yarn-error.*
+
+# macOS
+.DS_Store
+*.pem
+
+# local env files
+.env*.local
+
+# typescript
+*.tsbuildinfo
+
+# generated native folders
+/ios
+/android
+
+# --- project-specific exclusions ---------------------------------------
+# Nested scratch Expo app (464 MB of node_modules) — not part of this build
+mohit/
+
+# background-job logs written by local tooling
+.bg/
+
+# stray zero-byte files accidentally created by shell commands
+/cd
+/npx
+/Start-Sleep
+/^C

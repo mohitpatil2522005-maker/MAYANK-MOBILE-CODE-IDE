@@ -39,10 +39,18 @@
           "resizeMode": "contain",
           "backgroundColor": "#ffffff"
         }
-      ]
+      ],
+      "expo-build-properties"
     ],
     "experiments": {
       "typedRoutes": true
-    }
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "a6e2b6d9-b9fe-49c9-9f0d-e922f881b782"
+      }
+    },
+    "owner": "mohitpatil2522005"
   }
 }

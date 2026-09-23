@@ -37,6 +37,7 @@ import {
 import type { AIProviderConfig, ChatMessage } from '@/src/lib/ai/types';
 import { languageFromFilename } from '@/src/lib/editor/languages';
 import { getApiKey } from '@/src/lib/storage/keychain';
+import { usePermissionStore } from '@/src/store/permissionStore';
 import { useProjectStore } from '@/src/store/projectStore';
 
 const MAX_ITERATIONS = 6;
@@ -214,6 +215,7 @@ export const useAgentStore = create<AgentSessionState>()((set, get) => {
     });
     const history: ChatMessage[] = get().messages
       .filter((m) => m.status === 'complete' || m.role === 'user')
+      .filter((m) => m.role !== 'note')
       .map((m) => ({
         role: m.role === 'assistant' ? ('assistant' as const) : ('user' as const),
         content: m.content,
@@ -221,35 +223,37 @@ export const useAgentStore = create<AgentSessionState>()((set, get) => {
     return { system, history: packHistory(history) };
   }
 
-  /** Resolve all pending approvals on a message; resumes the loop when done. */
-  async function maybeResume(messageId: string): Promise<void> {
+  /** Resolve all pending approvals on a message; resumes the loop when done. */  async function maybeResume(messageId: string): Promise<void> {
     const msg = get().messages.find((m) => m.id === messageId);
     if (!msg?.toolCalls) return;
     const pending = msg.toolCalls.filter((c) => c.status === 'pending-approval');
     if (pending.length > 0) return; // still waiting on the user
     if (get().phase !== 'awaiting-approval') return;
 
+    // One more agentic iteration consumed (write-tool approval/resume path).
+    set({ turnCount: get().turnCount + 1 });
+
     // Gather feedback from every call in this turn (full bodies where stored).
     const feedback: ToolFeedback[] = msg.toolCalls.map((c) => {
-      if (c.status === 'rejected') {
-        return { tool: c.tool, status: 'rejected', note: 'User rejected this change. Do not re-apply it; ask or propose an alternative.' };
-      }
-      if (c.status === 'failed') {
-        return { tool: c.tool, status: 'error', error: c.feedbackFull ?? c.error ?? 'unknown error' };
-      }
-      return { tool: c.tool, status: 'ok', result: c.feedbackFull ?? c.resultPreview ?? c.summary ?? 'done' };
+      if (c.status === 'applied' || c.status === 'executed') return { tool: c.tool, status: 'ok' as const, result: c.feedbackFull };
+      if (c.status === 'rejected') return { tool: c.tool, status: 'rejected' as const };
+      if (c.status === 'failed') return { tool: c.tool, status: 'error' as const, error: c.error };
+      return { tool: c.tool, status: 'ok' as const };
     });
 
-    set({ phase: 'streaming' });
-    const feedbackMessage: AgentMessage = {
-      id: nextMessageId('user'),
-      role: 'user',
-      content: buildToolFeedbackMessage(feedback),
-      status: 'complete',
-      hidden: true,
-      createdAt: Date.now(),
-    };
-    set((s) => ({ messages: [...s.messages, feedbackMessage] }));
+    set((s) => ({
+      messages: s.messages.map((m) => {
+        if (m.id !== messageId) return m;
+        return {
+          ...m,
+          toolCalls: undefined,
+          content: buildToolFeedbackMessage(feedback),
+          status: 'complete',
+          hidden: true,
+        };
+      }),
+      phase: 'idle',
+    }));
     await streamTurn();
   }
 
@@ -500,6 +504,14 @@ export const useAgentStore = create<AgentSessionState>()((set, get) => {
       const state = get().messages.find((m) => m.id === messageId)?.toolCalls?.find((c) => c.callId === callId);
       if (!state || state.status !== 'pending-approval' || !state.preview) return;
 
+      // Record the user's decision in the permission audit log (Slice 3).
+      const path = typeof state.args.path === 'string' ? state.args.path : '';
+      usePermissionStore.getState().decide(
+        { action: 'write_file', target: path },
+        'agent-session',
+        'allow',
+      );
+
       patchToolCall(messageId, callId, { status: 'running', summary: 'Applying…' });
       const result = await applyWriteCall(state.call, state.preview);
       patchToolCall(messageId, callId, {
@@ -524,6 +536,13 @@ export const useAgentStore = create<AgentSessionState>()((set, get) => {
     rejectToolCall(messageId, callId) {
       const state = get().messages.find((m) => m.id === messageId)?.toolCalls?.find((c) => c.callId === callId);
       if (!state || state.status !== 'pending-approval') return;
+      // Record the denial in the permission audit log (Slice 3).
+      const path = typeof state.args.path === 'string' ? state.args.path : '';
+      usePermissionStore.getState().decide(
+        { action: 'write_file', target: path },
+        'agent-session',
+        'deny',
+      );
       patchToolCall(messageId, callId, {
         status: 'rejected',
         summary: 'Rejected by user',

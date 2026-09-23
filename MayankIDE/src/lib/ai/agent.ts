@@ -128,9 +128,12 @@ export function packHistory(messages: ChatMessage[], budget = HISTORY_CHAR_BUDGE
     const msg = messages[i];
     const cost = msg.content.length + 16;
     if (used + cost > budget && packed.length > 0) {
-      // Truncate oversized middle turns instead of dropping them entirely.
+      // Push a truncated copy of this message so it is not silently dropped,
+      // then stop — older messages are beyond the budget.
       if (msg.content.length > 2000) {
         packed.unshift({ role: msg.role, content: msg.content.slice(0, 2000) + '\n… [truncated]' });
+      } else {
+        packed.unshift(msg);
       }
       break;
     }
