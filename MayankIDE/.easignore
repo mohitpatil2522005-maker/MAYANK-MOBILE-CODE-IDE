@@ -49,6 +49,13 @@ mohit/
 # background-job logs written by local tooling
 .bg/
 
+# build artifacts sitting in the working tree (e.g. previously downloaded
+# APKs) — these are outputs, never build inputs, and EAS would otherwise
+# upload ~100 MB per build
+*.apk
+*.aab
+*.ipa
+
 # stray zero-byte files accidentally created by shell commands
 /cd
 /npx

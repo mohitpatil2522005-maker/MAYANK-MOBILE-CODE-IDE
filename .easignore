@@ -1,0 +1,60 @@
+# .easignore at the GIT REPO ROOT (this is where eas-cli looks — it uses
+# `git rev-parse --show-toplevel`, NOT the app subdirectory).
+#
+# Without this file EAS archives the shallow clone including its .git
+# directory, which contains a 106 MB APK blob committed to history — that
+# made every upload ~56 MB and it kept dying with ECONNRESET.
+
+# drop the clone's git object database entirely (commit/branch metadata is
+# sent to EAS separately by the CLI, so builds don't need it)
+.git
+
+# dependencies
+node_modules/
+bower_components/
+
+# Expo / Metro
+.expo/
+dist/
+web-build/
+.metro-health-check*
+
+# generated native folders
+/ios
+/android
+
+# nested scratch app (hundreds of MB of node_modules)
+mohit/
+
+# local background-job tooling
+.bg/
+
+# build artifacts — outputs, never build inputs
+*.apk
+*.aab
+*.ipa
+
+# debug
+npm-debug.*
+yarn-debug.*
+yarn-error.*
+
+# native / signing secrets (never upload these)
+.kotlin/
+*.orig.*
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+*.pem
+
+# local env files
+.env
+.env*.local
+
+# typescript
+*.tsbuildinfo
+
+# misc
+.DS_Store

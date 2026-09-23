@@ -39,3 +39,20 @@ yarn-error.*
 # generated native folders
 /ios
 /android
+
+# --- Build/scratch logs & helper scripts (not part of the project) ---
+.bg/
+
+# --- Nested scaffold copy accidentally committed ---
+/mohit/
+
+# --- Build artifacts / binaries ---
+*.apk
+*.aab
+*.keystore
+
+# --- Stray files created by mistyped shell commands ---
+/cd
+/npx
+/Start-Sleep
+/^C
