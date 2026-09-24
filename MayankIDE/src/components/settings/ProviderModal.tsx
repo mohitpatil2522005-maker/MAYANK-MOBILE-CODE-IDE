@@ -4,7 +4,7 @@
  * endpoint (/models) when possible, else entered manually.
  */
 import { Ionicons } from '@expo/vector-icons';
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Modal,
@@ -21,7 +21,7 @@ import { isInsecureEndpoint, PROVIDER_PRESETS } from '@/src/lib/ai/presets';
 import { createProviderClient } from '@/src/lib/ai/providers';
 import { useProviderRegistry } from '@/src/lib/ai/registry';
 import type { AIProviderConfig, AIModel, ProviderType, CompatibilityMode } from '@/src/lib/ai/types';
-import { setApiKey } from '@/src/lib/storage/keychain';
+import { getApiKey, setApiKey } from '@/src/lib/storage/keychain';
 import { useSettingsStore } from '@/src/store/settingsStore';
 
 interface ProviderModalProps {
@@ -48,10 +48,12 @@ export function ProviderModal({ visible, palette, editProvider, onClose }: Provi
   const [status, setStatus] = useState<{ kind: 'info' | 'ok' | 'error'; text: string } | null>(null);
   const [busy, setBusy] = useState(false);
   const [showKey, setShowKey] = useState(false);
+  const [hasStoredKey, setHasStoredKey] = useState(false);
   const [compatibility, setCompatibility] = useState<CompatibilityMode>('openai');
 
   const preset = PROVIDER_PRESETS[type];
   const isEdit = !!editProvider;
+  const inputRef = useRef<TextInput>(null);
 
   // (Re)initialize the form when opening.
   useEffect(() => {
@@ -59,6 +61,7 @@ export function ProviderModal({ visible, palette, editProvider, onClose }: Provi
     setStatus(null);
     setFetchedModels(null);
     setApiKeyInput('');
+    setHasStoredKey(false);
     if (editProvider) {
       setType(editProvider.type);
       setName(editProvider.name);
@@ -66,6 +69,14 @@ export function ProviderModal({ visible, palette, editProvider, onClose }: Provi
       setDefaultModel(editProvider.defaultModel ?? '');
       setModelsText(editProvider.models.map((m) => m.id).join(', '));
       setCompatibility(editProvider.compatibility ?? 'openai');
+      // Surface whether a key is already on file so "Fetch models" / "Save"
+      // use the stored key instead of failing on the empty field. The form
+      // never reads the secret value back into state — it only checks
+      // presence, and only overwrites it when the user types a new one.
+      void getApiKey(editProvider.id).then(
+        (stored) => setHasStoredKey(!!stored?.trim()),
+        () => setHasStoredKey(false),
+      );
     } else {
       setType('openai');
       const p = PROVIDER_PRESETS.openai;
@@ -104,14 +115,44 @@ export function ProviderModal({ visible, palette, editProvider, onClose }: Provi
     [editProvider, name, type, baseURL, preset.label, compatibility],
   );
 
-  const keyForRequest = (): string | null => (apiKey.trim().length > 0 ? apiKey.trim() : null);
+  const keyForRequest = async (): Promise<string | null> => {
+    const typed = apiKey.trim();
+    if (typed.length > 0) return typed;
+    // Edit mode: fall back to the key already in secure storage instead of
+    // forcing the user to retype (or wiping) it on every save/fetch.
+    if (editProvider) {
+      const stored = await getApiKey(editProvider.id).catch(() => null);
+      const cleaned = stored?.trim() ?? '';
+      if (cleaned) {
+        setHasStoredKey(true);
+        return cleaned;
+      }
+    }
+    return null;
+  };
 
   const handleFetchModels = async () => {
+    if (!baseURL.trim()) {
+      setStatus({ kind: 'error', text: 'Enter the provider base URL first.' });
+      return;
+    }
     setBusy(true);
     setStatus({ kind: 'info', text: 'Contacting endpoint…' });
     try {
       const client = createProviderClient(draftConfig);
-      const models = await client.listModels(keyForRequest());
+      const key = await keyForRequest();
+      if (!key && draftConfig.type !== 'custom') {
+        const presetLabel = PROVIDER_PRESETS[draftConfig.type].label;
+        setStatus({
+          kind: 'error',
+          text: isEdit
+            ? `No API key on file for this ${presetLabel} provider. Type the key above, then fetch again.`
+            : `${presetLabel} needs an API key before models can be fetched.`,
+        });
+        setFetchedModels(null);
+        return;
+      }
+      const models = await client.listModels(key);
       if (models.length === 0) {
         setStatus({ kind: 'info', text: 'Endpoint answered but returned no models — enter ids manually.' });
         setFetchedModels(null);
@@ -139,8 +180,16 @@ export function ProviderModal({ visible, palette, editProvider, onClose }: Provi
       setStatus({ kind: 'error', text: 'Name and base URL are required.' });
       return;
     }
-    if (preset.requiresKey && !isEdit && apiKey.trim().length === 0) {
-      setStatus({ kind: 'error', text: `${preset.label} requires an API key.` });
+    // Key check must account for a key already in secure storage when
+    // editing; only a brand-new provider strictly needs a typed key.
+    const effectiveKey = await keyForRequest();
+    if (preset.requiresKey && !effectiveKey) {
+      setStatus({
+        kind: 'error',
+        text: isEdit
+          ? `${preset.label} requires an API key — type it above (it stays in the OS keychain, never in the project).`
+          : `${preset.label} requires an API key.`,
+      });
       return;
     }
     const models: AIModel[] =
@@ -338,6 +387,33 @@ export function ProviderModal({ visible, palette, editProvider, onClose }: Provi
             <Text style={[styles.label, { color: palette.textSecondary }]}>
               API KEY {preset.requiresKey ? '(required)' : '(optional)'}
             </Text>
+            {isEdit && hasStoredKey && apiKey.length === 0 ? (
+              <View
+                style={[
+                  styles.keyRow,
+                  { backgroundColor: palette.inputBg, borderColor: palette.border },
+                ]}
+              >
+                <Ionicons
+                  name="key-outline"
+                  size={16}
+                  color={palette.success}
+                  style={styles.keyStatusIcon}
+                />
+                <Text style={[styles.keyStatusText, { color: palette.text }]} numberOfLines={1}>
+                  Key saved — leave blank to keep it, or type a new one to replace it.
+                </Text>
+                <Pressable
+                  onPress={() => inputRef.current?.focus()}
+                  hitSlop={8}
+                  style={styles.keyToggle}
+                  accessibilityRole="button"
+                  accessibilityLabel="Replace API key"
+                >
+                  <Ionicons name="pencil-outline" size={18} color={palette.textSecondary} />
+                </Pressable>
+              </View>
+            ) : null}
             <View
               style={[
                 styles.keyRow,
@@ -345,6 +421,7 @@ export function ProviderModal({ visible, palette, editProvider, onClose }: Provi
               ]}
             >
               <TextInput
+                ref={inputRef}
                 value={apiKey}
                 onChangeText={setApiKeyInput}
                 placeholder={
@@ -525,6 +602,8 @@ const styles = StyleSheet.create({
   },
   keyInput: { flex: 1, paddingHorizontal: 12, paddingVertical: 10, fontSize: 14 },
   keyToggle: { padding: 6 },
+  keyStatusIcon: { marginLeft: 12 },
+  keyStatusText: { flex: 1, fontSize: 12.5 },
   modelsInput: { minHeight: 64, textAlignVertical: 'top' },
   hint: { fontSize: 11.5, marginTop: 4, lineHeight: 16 },
   warnRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 6, marginTop: 6 },

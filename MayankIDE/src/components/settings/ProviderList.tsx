@@ -45,7 +45,18 @@ export function ProviderList({ palette }: { palette: Palette }) {
     setTestingId(provider.id);
     try {
       const client = createProviderClient(provider);
-      const result = await client.testConnection(await getApiKey(provider.id));
+      const key = (await getApiKey(provider.id))?.trim() || null;
+      if (!key && PROVIDER_PRESETS[provider.type].requiresKey) {
+        setTestResults((prev) => ({
+          ...prev,
+          [provider.id]: {
+            ok: false,
+            message: `No API key stored for ${provider.name} — open Edit and paste the key first.`,
+          },
+        }));
+        return;
+      }
+      const result = await client.testConnection(key);
       setTestResults((prev) => ({ ...prev, [provider.id]: result }));
       if (result.ok) updateProvider(provider.id, { lastTestOkAt: Date.now() });
     } catch (err) {

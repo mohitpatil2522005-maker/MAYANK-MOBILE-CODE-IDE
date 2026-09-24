@@ -283,7 +283,7 @@ export const useAgentStore = create<AgentSessionState>()((set, get) => {
     };
     set((s) => ({ messages: [...s.messages, assistantMessage], phase: 'streaming' }));
 
-    const apiKey = await getApiKey(provider.id);
+    const apiKey = (await getApiKey(provider.id))?.trim() || null;
     if (PROVIDER_PRESETS[provider.type].requiresKey && !apiKey) {
       patchMessage(assistantId, {
         status: 'error',
