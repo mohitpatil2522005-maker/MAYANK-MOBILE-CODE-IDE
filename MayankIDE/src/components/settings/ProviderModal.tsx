@@ -20,7 +20,7 @@ import type { Palette } from '@/src/constants/theme';
 import { isInsecureEndpoint, PROVIDER_PRESETS } from '@/src/lib/ai/presets';
 import { createProviderClient } from '@/src/lib/ai/providers';
 import { useProviderRegistry } from '@/src/lib/ai/registry';
-import type { AIProviderConfig, AIModel, ProviderType } from '@/src/lib/ai/types';
+import type { AIProviderConfig, AIModel, ProviderType, CompatibilityMode } from '@/src/lib/ai/types';
 import { setApiKey } from '@/src/lib/storage/keychain';
 import { useSettingsStore } from '@/src/store/settingsStore';
 
@@ -47,6 +47,8 @@ export function ProviderModal({ visible, palette, editProvider, onClose }: Provi
   const [fetchedModels, setFetchedModels] = useState<AIModel[] | null>(null);
   const [status, setStatus] = useState<{ kind: 'info' | 'ok' | 'error'; text: string } | null>(null);
   const [busy, setBusy] = useState(false);
+  const [showKey, setShowKey] = useState(false);
+  const [compatibility, setCompatibility] = useState<CompatibilityMode>('openai');
 
   const preset = PROVIDER_PRESETS[type];
   const isEdit = !!editProvider;
@@ -63,6 +65,7 @@ export function ProviderModal({ visible, palette, editProvider, onClose }: Provi
       setBaseURL(editProvider.baseURL);
       setDefaultModel(editProvider.defaultModel ?? '');
       setModelsText(editProvider.models.map((m) => m.id).join(', '));
+      setCompatibility(editProvider.compatibility ?? 'openai');
     } else {
       setType('openai');
       const p = PROVIDER_PRESETS.openai;
@@ -70,6 +73,7 @@ export function ProviderModal({ visible, palette, editProvider, onClose }: Provi
       setBaseURL(p.defaultBaseURL);
       setModelsText(p.defaultModels.map((m) => m.id).join(', '));
       setDefaultModel(p.defaultModels[0]?.id ?? '');
+      setCompatibility('openai');
     }
   }, [visible, editProvider]);
 
@@ -93,10 +97,11 @@ export function ProviderModal({ visible, palette, editProvider, onClose }: Provi
       name: name.trim() || preset.label,
       type,
       baseURL: baseURL.trim(),
+      compatibility: type === 'custom' ? compatibility : undefined,
       models: [],
       createdAt: editProvider?.createdAt ?? Date.now(),
     }),
-    [editProvider, name, type, baseURL, preset.label],
+    [editProvider, name, type, baseURL, preset.label, compatibility],
   );
 
   const keyForRequest = (): string | null => (apiKey.trim().length > 0 ? apiKey.trim() : null);
@@ -158,6 +163,7 @@ export function ProviderModal({ visible, palette, editProvider, onClose }: Provi
         updateProvider(providerId, {
           name: name.trim(),
           baseURL: baseURL.trim(),
+          compatibility: type === 'custom' ? compatibility : undefined,
           models,
           defaultModel: models.some((m) => m.id === defaultModel) ? defaultModel : models[0].id,
         });
@@ -166,6 +172,7 @@ export function ProviderModal({ visible, palette, editProvider, onClose }: Provi
           name: name.trim(),
           type,
           baseURL: baseURL.trim(),
+          compatibility: type === 'custom' ? compatibility : undefined,
           models,
           defaultModel: models.some((m) => m.id === defaultModel) ? defaultModel : models[0].id,
         }).id;
@@ -281,20 +288,88 @@ export function ProviderModal({ visible, palette, editProvider, onClose }: Provi
               </View>
             )}
 
+            {/* Compatibility mode (custom endpoints only) */}
+            {type === 'custom' && (
+              <>
+                <Text style={[styles.label, { color: palette.textSecondary }]}>
+                  COMPATIBILITY MODE
+                </Text>
+                <View style={styles.typeRow}>
+                  {(
+                    [
+                      ['openai', 'OpenAI Compatible'],
+                      ['anthropic', 'Anthropic Messages'],
+                      ['open-response', 'Open Response'],
+                    ] as [CompatibilityMode, string][]
+                  ).map(([mode, label]) => {
+                    const selected = mode === compatibility;
+                    return (
+                      <Pressable
+                        key={mode}
+                        onPress={() => setCompatibility(mode)}
+                        style={[
+                          styles.typeChip,
+                          { borderColor: palette.border },
+                          selected && { backgroundColor: palette.tint, borderColor: palette.tint },
+                        ]}
+                        accessibilityRole="button"
+                        accessibilityState={{ selected }}
+                      >
+                        <Text
+                          style={[
+                            styles.typeChipText,
+                            { color: selected ? palette.onTint : palette.text },
+                          ]}
+                        >
+                          {label}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+                <Text style={[styles.hint, { color: palette.textSecondary }]}>
+                  Which API dialect this endpoint speaks: OpenAI Chat Completions, Anthropic
+                  Messages, or the OpenAI Responses API.
+                </Text>
+              </>
+            )}
+
             {/* API key */}
             <Text style={[styles.label, { color: palette.textSecondary }]}>
               API KEY {preset.requiresKey ? '(required)' : '(optional)'}
             </Text>
-            <TextInput
-              value={apiKey}
-              onChangeText={setApiKeyInput}
-              placeholder={isEdit ? '••••••••  (leave blank to keep current)' : preset.keyHint}
-              placeholderTextColor={palette.textSecondary}
-              style={inputStyle}
-              autoCapitalize="none"
-              autoCorrect={false}
-              secureTextEntry
-            />
+            <View
+              style={[
+                styles.keyRow,
+                { backgroundColor: palette.inputBg, borderColor: palette.border },
+              ]}
+            >
+              <TextInput
+                value={apiKey}
+                onChangeText={setApiKeyInput}
+                placeholder={
+                  isEdit ? '••••••••  (leave blank to keep current)' : preset.keyHint
+                }
+                placeholderTextColor={palette.textSecondary}
+                style={[styles.keyInput, { color: palette.text }]}
+                autoCapitalize="none"
+                autoCorrect={false}
+                secureTextEntry={!showKey}
+              />
+              <Pressable
+                onPress={() => setShowKey((v) => !v)}
+                hitSlop={8}
+                style={styles.keyToggle}
+                accessibilityRole="button"
+                accessibilityLabel={showKey ? 'Hide API key' : 'Show API key'}
+              >
+                <Ionicons
+                  name={showKey ? 'eye-off-outline' : 'eye-outline'}
+                  size={18}
+                  color={palette.textSecondary}
+                />
+              </Pressable>
+            </View>
             <Text style={[styles.hint, { color: palette.textSecondary }]}>
               Stored only in the OS keychain
               {/* Web build keeps keys in session memory instead */}
@@ -441,6 +516,15 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
   monoInput: { fontFamily: 'monospace' as never, fontSize: 13 },
+  keyRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderRadius: 10,
+    paddingRight: 6,
+  },
+  keyInput: { flex: 1, paddingHorizontal: 12, paddingVertical: 10, fontSize: 14 },
+  keyToggle: { padding: 6 },
   modelsInput: { minHeight: 64, textAlignVertical: 'top' },
   hint: { fontSize: 11.5, marginTop: 4, lineHeight: 16 },
   warnRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 6, marginTop: 6 },

@@ -7,7 +7,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { create } from 'zustand';
 
 import { deleteApiKey } from '@/src/lib/storage/keychain';
-import type { AIModel, AIProviderConfig, ProviderType } from './types';
+import type { AIModel, AIProviderConfig, CompatibilityMode, ProviderType } from './types';
 
 const REGISTRY_KEY = 'mayank-ide/providers/v1';
 
@@ -16,6 +16,8 @@ export interface NewProviderInput {
   type: ProviderType;
   baseURL: string;
   customHeaders?: Record<string, string>;
+  /** Custom endpoints only: which wire protocol the endpoint speaks. */
+  compatibility?: CompatibilityMode;
   models?: AIModel[];
   defaultModel?: string;
 }
@@ -90,6 +92,7 @@ export const useProviderRegistry = create<RegistryState>()((set, get) => {
         type: input.type,
         baseURL: input.baseURL.trim(),
         customHeaders: input.customHeaders,
+        compatibility: input.compatibility,
         models: input.models ?? [],
         defaultModel: input.defaultModel ?? input.models?.[0]?.id,
         createdAt: Date.now(),

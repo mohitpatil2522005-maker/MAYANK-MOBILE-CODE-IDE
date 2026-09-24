@@ -9,6 +9,7 @@ import { router } from 'expo-router';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   FlatList,
+  Keyboard,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -81,6 +82,15 @@ export default function AgentScreen() {
     }
     return undefined;
   }, [messages.length, messages[messages.length - 1]?.content]);
+
+  // When the keyboard opens, the list shrinks — keep the latest message and
+  // the composer in view.
+  useEffect(() => {
+    const sub = Keyboard.addListener('keyboardDidShow', () => {
+      requestAnimationFrame(() => listRef.current?.scrollToEnd({ animated: false }));
+    });
+    return () => sub.remove();
+  }, []);
 
   const hasProvider = providers.length > 0;
 
@@ -158,8 +168,8 @@ export default function AgentScreen() {
 
       <KeyboardAvoidingView
         style={styles.flex}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        keyboardVerticalOffset={0}
+        behavior={Platform.OS === 'ios' ? 'padding' : Platform.OS === 'android' ? 'height' : undefined}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
       >
         {!hydrated ? null : !hasProvider ? (
           // No provider configured — guide to setup.
@@ -187,48 +197,60 @@ export default function AgentScreen() {
           </View>
         ) : (
           <>
-            <FlatList
-              ref={listRef}
-              data={messages}
-              keyExtractor={(m) => m.id}
-              renderItem={({ item }) => (
-                <ChatMessageItem
-                  message={item}
-                  palette={palette}
-                  busy={phase === 'streaming'}
-                  projectFiles={projectFiles}
-                  onOpenFile={(node) => {
-                    void openFile(node);
-                    router.push('/');
-                  }}
-                  onApproveToolCall={(callId) => void approveToolCall(item.id, callId)}
-                  onRejectToolCall={(callId) => rejectToolCall(item.id, callId)}
-                  onRetry={item.status === 'error' ? () => void retryLast() : undefined}
-                />
-              )}
-              contentContainerStyle={[styles.chatContent, messages.length === 0 && styles.chatEmpty]}
-              onContentSizeChange={() => listRef.current?.scrollToEnd({ animated: false })}
-              keyboardShouldPersistTaps="handled"
-              ListEmptyComponent={
-                <View style={styles.chatEmptyInner}>
-                  <Ionicons name="chatbubbles-outline" size={36} color={palette.textSecondary} />
-                  <Text style={[styles.emptyTitle, { color: palette.text }]}>
-                    Ask anything about your code
-                  </Text>
-                  <Text style={[styles.emptyText, { color: palette.textSecondary }]}>
-                    {activeFile
-                      ? `Forge can see "${activeFile.path}"${
-                          selection ? ' and your selection' : ''
-                        } — try a quick action below, or ask it to read other files.`
-                      : 'Open a file in the Editor tab to give Forge context, or just ask a question.'}
-                  </Text>
-                </View>
-              }
-            />
+            <Pressable
+              style={styles.chatDismissArea}
+              onPress={() => Keyboard.dismiss()}
+              accessibilityLabel="Dismiss keyboard"
+            >
+              <FlatList
+                ref={listRef}
+                data={messages}
+                keyExtractor={(m) => m.id}
+                renderItem={({ item }) => (
+                  <ChatMessageItem
+                    message={item}
+                    palette={palette}
+                    busy={phase === 'streaming'}
+                    projectFiles={projectFiles}
+                    onOpenFile={(node) => {
+                      void openFile(node);
+                      router.push('/');
+                    }}
+                    onApproveToolCall={(callId) => void approveToolCall(item.id, callId)}
+                    onRejectToolCall={(callId) => rejectToolCall(item.id, callId)}
+                    onRetry={item.status === 'error' ? () => void retryLast() : undefined}
+                  />
+                )}
+                contentContainerStyle={[
+                  styles.chatContent,
+                  { minHeight: '100%' },
+                  messages.length === 0 && styles.chatEmpty,
+                ]}
+                onContentSizeChange={() => listRef.current?.scrollToEnd({ animated: false })}
+                keyboardShouldPersistTaps="handled"
+                ListEmptyComponent={
+                  <View style={styles.chatEmptyInner}>
+                    <Ionicons name="chatbubbles-outline" size={36} color={palette.textSecondary} />
+                    <Text style={[styles.emptyTitle, { color: palette.text }]}>
+                      Ask anything about your code
+                    </Text>
+                    <Text style={[styles.emptyText, { color: palette.textSecondary }]}>
+                      {activeFile
+                        ? `Forge can see "${activeFile.path}"${
+                            selection ? ' and your selection' : ''
+                          } — try a quick action below, or ask it to read other files.`
+                        : 'Open a file in the Editor tab to give Forge context, or just ask a question.'}
+                    </Text>
+                  </View>
+                }
+              />
+            </Pressable>
 
             {/* Session status strip */}
             {messages.length > 0 && (
-              <Text style={[styles.statusStrip, { color: exportedAt ? palette.success : palette.textSecondary }]}>
+              <Text
+                style={[styles.statusStrip, { color: exportedAt ? palette.success : palette.textSecondary }]}
+              >
                 {exportedAt
                   ? 'Session markdown copied to clipboard ✓'
                   : `${messages.filter((m) => !m.hidden).length} messages · ≈${sessionTokens.toLocaleString()} tokens${
@@ -301,6 +323,7 @@ const styles = StyleSheet.create({
   },
   setupButtonText: { fontSize: 14.5, fontWeight: '700' },
   chatContent: { paddingHorizontal: 12, paddingVertical: 10, flexGrow: 1 },
+  chatDismissArea: { flex: 1 },
   chatEmpty: { justifyContent: 'center' },
   chatEmptyInner: { alignItems: 'center', gap: 10, paddingHorizontal: 30 },
   statusStrip: {

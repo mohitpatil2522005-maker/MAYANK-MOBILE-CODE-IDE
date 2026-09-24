@@ -16,6 +16,8 @@ export interface AIModel {
  * NEVER contains the API key — keys live in the OS keychain
  * (src/lib/storage/keychain.ts) and are looked up by provider id.
  */
+export type CompatibilityMode = 'openai' | 'anthropic' | 'open-response';
+
 export interface AIProviderConfig {
   id: string;
   name: string;
@@ -24,6 +26,8 @@ export interface AIProviderConfig {
   baseURL: string;
   /** Extra headers (auth proxies, etc.). May contain secrets by user's choice. */
   customHeaders?: Record<string, string>;
+  /** Compatibility layer for custom endpoints (OpenAI / Anthropic / Generic). */
+  compatibility?: CompatibilityMode;
   models: AIModel[];
   defaultModel?: string;
   createdAt: number;

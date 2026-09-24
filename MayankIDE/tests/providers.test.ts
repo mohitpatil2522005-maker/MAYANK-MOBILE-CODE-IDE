@@ -4,11 +4,13 @@
  * and a mocked fetch covers listModels/testConnection. Plus fileRefs.
  */
 import { harness } from './harness';
+import { createProviderClient } from '../src/lib/ai/providers';
 import { OpenAICompatibleClient } from '../src/lib/ai/providers/openaiCompatible';
 import { AnthropicClient } from '../src/lib/ai/providers/anthropic';
 import { GoogleClient } from '../src/lib/ai/providers/google';
+import { OpenResponseClient } from '../src/lib/ai/providers/openResponse';
 import { extractProjectFileRefs } from '../src/lib/ai/fileRefs';
-import type { AIProviderConfig, StreamToken } from '../src/lib/ai/types';
+import type { AIProviderConfig, CompatibilityMode, StreamToken } from '../src/lib/ai/types';
 import type { FileNode } from '../src/lib/fs/types';
 
 const t = harness('providers (mocked transport)');
@@ -77,8 +79,12 @@ const fetchFixtures = new Map<string, { status: number; json: unknown }>();
   } as Response;
 };
 
-function cfg(type: AIProviderConfig['type'], baseURL: string): AIProviderConfig {
-  return { id: `${type}-t`, name: type, type, baseURL, models: [], createdAt: 0 };
+function cfg(
+  type: AIProviderConfig['type'],
+  baseURL: string,
+  compatibility?: CompatibilityMode,
+): AIProviderConfig {
+  return { id: `${type}-t`, name: type, type, baseURL, compatibility, models: [], createdAt: 0 };
 }
 
 async function collect(stream: AsyncGenerator<StreamToken>): Promise<StreamToken[]> {
@@ -180,6 +186,109 @@ async function main() {
     );
     t.check('missing key → error token', noKey[0].type, 'error');
   }
+
+  t.section('Custom provider compatibility dispatch');
+  {
+    const customOpenAI = createProviderClient(cfg('custom', 'http://localhost:11434/v1'));
+    t.check('custom default → OpenAI-compatible', customOpenAI instanceof OpenAICompatibleClient, true);
+    const customAnthropic = createProviderClient(
+      cfg('custom', 'https://proxy.example.com/v1', 'anthropic'),
+    );
+    t.check('custom + anthropic → Anthropic client', customAnthropic instanceof AnthropicClient, true);
+    const customResponses = createProviderClient(
+      cfg('custom', 'https://api.openai.com/v1', 'open-response'),
+    );
+    t.check('custom + open-response → Responses client', customResponses instanceof OpenResponseClient, true);
+    const builtin = createProviderClient(cfg('anthropic', 'https://api.anthropic.com/v1'));
+    t.check('built-in anthropic unchanged', builtin instanceof AnthropicClient, true);
+  }
+
+  t.section('Custom provider (Anthropic-compatible) key injection + payload');
+  {
+    sseFixtures.set('https://proxy.example.com/v1/messages', {
+      status: 200,
+      body:
+        'data: {"type":"content_block_delta","delta":{"type":"text_delta","text":"Hi"}}\n\n' +
+        'data: {"type":"message_stop"}\n\n',
+    });
+    const client = createProviderClient(cfg('custom', 'https://proxy.example.com/v1/', 'anthropic'));
+    const tokens = await collect(
+      client.chat(
+        {
+          model: 'claude-sonnet-4-20250514',
+          messages: [
+            { role: 'system', content: 'Be brief.' },
+            { role: 'user', content: 'hey' },
+          ],
+        },
+        'custom-key',
+      ),
+    );
+    t.check('anthropic wire streamed text', texts(tokens), 'Hi');
+    t.check('x-api-key header used', lastRequest?.headers['x-api-key'], 'custom-key');
+    t.check('no Bearer header', !lastRequest?.headers.Authorization, true);
+    t.check('trailing slash stripped', lastRequest?.url, 'https://proxy.example.com/v1/messages');
+    const body = JSON.parse(lastRequest?.body ?? '{}') as {
+      system?: string;
+      messages?: { role: string }[];
+      max_tokens?: number;
+    };
+    t.check('system lifted to top level', body.system, 'Be brief.');
+    t.check(
+      'system removed from messages',
+      (body.messages ?? []).some((m) => m.role === 'system'),
+      false,
+    );
+    t.check('max_tokens present', typeof body.max_tokens, 'number');
+    t.check('done token emitted', tokens[tokens.length - 1].type, 'done');
+  }
+
+  t.section('Open Response streaming (Responses API)');
+  {
+    sseFixtures.set('https://api.openai.com/v1/responses', {
+      status: 200,
+      body:
+        'event: response.output_text.delta\n' +
+        'data: {"type":"response.output_text.delta","delta":"Hel"}\n\n' +
+        'data: {"type":"response.output_text.delta","delta":"lo"}\n\n' +
+        'data: {"type":"response.completed"}\n\n',
+    });
+    const client = createProviderClient(cfg('custom', 'https://api.openai.com/v1', 'open-response'));
+    const tokens = await collect(
+      client.chat(
+        {
+          model: 'gpt-4o',
+          messages: [
+            { role: 'system', content: 'Be nice.' },
+            { role: 'user', content: 'hi' },
+          ],
+        },
+        'sk-resp',
+      ),
+    );
+    t.check('responses wire streamed text', texts(tokens), 'Hello');
+    t.check('bearer key injected', lastRequest?.headers.Authorization, 'Bearer sk-resp');
+    t.check('hits /responses endpoint', lastRequest?.url, 'https://api.openai.com/v1/responses');
+    const body = JSON.parse(lastRequest?.body ?? '{}') as { instructions?: string };
+    t.check('system → instructions', body.instructions, 'Be nice.');
+    t.check('done token emitted', tokens[tokens.length - 1].type, 'done');
+
+    sseFixtures.set('https://fail.example.com/v1/responses', {
+      status: 200,
+      body: 'data: {"type":"response.failed","response":{"error":{"message":"boom"}}}\n\n',
+    });
+    const failing = createProviderClient(cfg('custom', 'https://fail.example.com/v1', 'open-response'));
+    const failTokens = await collect(
+      failing.chat({ model: 'x', messages: [{ role: 'user', content: 'hi' }] }, null),
+    );
+    t.check('response.failed → error token', failTokens[0].type, 'error');
+    t.check(
+      'error message surfaced',
+      failTokens[0].type === 'error' ? failTokens[0].error : '',
+      'boom',
+    );
+  }
+
 
   t.section('listModels via mocked fetch');
   {
